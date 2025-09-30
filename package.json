@@ -1,0 +1,86 @@
+{
+  "name": "nuxt-dev-server",
+  "displayName": "Nuxt Dev Server Manager",
+  "description": "Manage Nuxt development servers with status bar integration",
+  "version": "0.0.3",
+  "publisher": "pstuart",
+  "author": {
+    "name": "Patrick Stuart"
+  },
+  "license": "MIT",
+  "icon": "icon.png",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pstuart/nuxt-dev-server-vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "nuxt",
+    "vue",
+    "dev server",
+    "development",
+    "nuxt3"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/nuxt.config.{js,ts,mjs,mts}"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "nuxt-dev-server.start",
+        "title": "Nuxt: Start Dev Server"
+      },
+      {
+        "command": "nuxt-dev-server.stop",
+        "title": "Nuxt: Stop Dev Server"
+      },
+      {
+        "command": "nuxt-dev-server.restart",
+        "title": "Nuxt: Restart Dev Server"
+      },
+      {
+        "command": "nuxt-dev-server.showAll",
+        "title": "Nuxt: Show All Running Instances"
+      },
+      {
+        "command": "nuxt-dev-server.killAll",
+        "title": "Nuxt: Kill All Running Instances"
+      },
+      {
+        "command": "nuxt-dev-server.listAndKill",
+        "title": "Nuxt: List and Kill Instances"
+      },
+      {
+        "command": "nuxt-dev-server.openBrowser",
+        "title": "Nuxt: Open in Browser"
+      },
+      {
+        "command": "nuxt-dev-server.showVersion",
+        "title": "Nuxt: Show Version"
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "version:patch": "npm version patch --no-git-tag-version",
+    "version:minor": "npm version minor --no-git-tag-version",
+    "version:major": "npm version major --no-git-tag-version",
+    "package:do": "npm run compile && vsce package",
+    "package": "npm run version:patch && npm run package:do",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.x",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.22.0",
+    "typescript": "^5.3.0"
+  }
+}

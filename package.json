@@ -2,7 +2,7 @@
   "name": "nuxt-dev-server",
   "displayName": "Nuxt Dev Server Manager",
   "description": "Manage Nuxt development servers with status bar integration",
-  "version": "0.0.3",
+  "version": "0.0.5",
   "publisher": "pstuart",
   "author": {
     "name": "Patrick Stuart"

@@ -2,7 +2,7 @@
   "name": "nuxt-dev-server",
   "displayName": "Nuxt Dev Server Manager",
   "description": "Manage Nuxt development servers with status bar integration",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "publisher": "pstuart",
   "author": {
     "name": "Patrick Stuart"
@@ -103,7 +103,13 @@
         },
         "nuxt-dev-server.preferredPackageManager": {
           "type": "string",
-          "enum": ["auto", "npm", "yarn", "pnpm", "bun"],
+          "enum": [
+            "auto",
+            "npm",
+            "yarn",
+            "pnpm",
+            "bun"
+          ],
           "default": "auto",
           "description": "Preferred package manager (auto-detect if 'auto')"
         },

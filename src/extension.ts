@@ -6,6 +6,9 @@ import * as fs from 'fs';
 
 const execAsync = promisify(exec);
 
+// PID validation regex - only allow numeric PIDs
+const PID_REGEX = /^\d+$/;
+
 interface NuxtProcess {
     pid: string;
     command: string;
@@ -13,12 +16,76 @@ interface NuxtProcess {
     port?: string;
 }
 
+interface ServerTrackingInfo {
+    startTime: number;
+    lastActivity: number;
+    outputChannel: vscode.OutputChannel | null;
+}
+
+// Global state
 let statusBarItem: vscode.StatusBarItem;
 let devServerProcess: ChildProcess | null = null;
 let devServerWorkingDir: string | null = null;
 let serverPort = 3000;
 let serverUrl = `http://localhost:${serverPort}`;
 let updateInterval: NodeJS.Timeout | null = null;
+let autoKillCheckInterval: NodeJS.Timeout | null = null;
+let fileWatcher: vscode.FileSystemWatcher | null = null;
+let serverTracking: ServerTrackingInfo = {
+    startTime: 0,
+    lastActivity: 0,
+    outputChannel: null
+};
+
+// Helper function to get configuration
+function getConfig() {
+    return vscode.workspace.getConfiguration('nuxt-dev-server');
+}
+
+// Helper function to validate PIDs
+function isValidPID(pid: string | number | undefined): boolean {
+    if (pid === undefined || pid === null) {
+        return false;
+    }
+    return PID_REGEX.test(pid.toString());
+}
+
+// Helper function to safely parse JSON
+function safeJSONParse<T>(content: string, fallback: T): T {
+    try {
+        return JSON.parse(content) as T;
+    } catch (error) {
+        console.error('JSON parse error:', error);
+        return fallback;
+    }
+}
+
+// Helper function to show notifications based on settings
+function showNotification(type: 'info' | 'warning' | 'error', message: string) {
+    if (!getConfig().get<boolean>('showNotifications', true)) {
+        return;
+    }
+
+    switch (type) {
+        case 'info':
+            vscode.window.showInformationMessage(message);
+            break;
+        case 'warning':
+            vscode.window.showWarningMessage(message);
+            break;
+        case 'error':
+            vscode.window.showErrorMessage(message);
+            break;
+    }
+}
+
+// Get or create a single output channel for the dev server
+function getOutputChannel(): vscode.OutputChannel {
+    if (!serverTracking.outputChannel) {
+        serverTracking.outputChannel = vscode.window.createOutputChannel('Nuxt Dev Server');
+    }
+    return serverTracking.outputChannel;
+}
 
 export function activate(context: vscode.ExtensionContext) {
     console.log('Nuxt Dev Server Manager activated');
@@ -41,27 +108,170 @@ export function activate(context: vscode.ExtensionContext) {
         vscode.commands.registerCommand('nuxt-dev-server.showMenu', showQuickPick)
     );
 
+    // Setup file watcher for activity tracking
+    setupFileWatcher(context);
+
     // Start monitoring
     updateStatusBar();
-    updateInterval = setInterval(updateStatusBar, 3000);
+    const updateIntervalMs = getConfig().get<number>('statusBarUpdateInterval', 3000);
+    updateInterval = setInterval(updateStatusBar, updateIntervalMs);
+
+    // Start auto-kill check interval (check every 30 seconds)
+    autoKillCheckInterval = setInterval(checkAutoKillConditions, 30000);
+
+    // Register configuration change listener
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration('nuxt-dev-server.statusBarUpdateInterval')) {
+                // Restart update interval with new value
+                if (updateInterval) {
+                    clearInterval(updateInterval);
+                }
+                const newInterval = getConfig().get<number>('statusBarUpdateInterval', 3000);
+                updateInterval = setInterval(updateStatusBar, newInterval);
+            }
+        })
+    );
 }
 
 export function deactivate() {
+    // Clear intervals
     if (updateInterval) {
         clearInterval(updateInterval);
+        updateInterval = null;
     }
+    if (autoKillCheckInterval) {
+        clearInterval(autoKillCheckInterval);
+        autoKillCheckInterval = null;
+    }
+
+    // Dispose file watcher
+    if (fileWatcher) {
+        fileWatcher.dispose();
+        fileWatcher = null;
+    }
+
+    // Cleanup output channel
+    if (serverTracking.outputChannel) {
+        serverTracking.outputChannel.dispose();
+        serverTracking.outputChannel = null;
+    }
+
+    // Graceful shutdown of dev server
     if (devServerProcess && devServerProcess.pid) {
-        try {
-            // Kill all child processes
-            execAsync(`pkill -9 -P ${devServerProcess.pid}`).catch(() => {});
-            // Kill the main process
-            devServerProcess.kill('SIGKILL');
-        } catch (error) {
-            // Best effort cleanup
+        const pid = devServerProcess.pid;
+        if (isValidPID(pid)) {
+            try {
+                // Try graceful shutdown first
+                console.log(`Gracefully shutting down server with PID ${pid}`);
+                process.kill(pid, 'SIGTERM');
+
+                // Force kill after timeout
+                setTimeout(() => {
+                    try {
+                        if (devServerProcess && !devServerProcess.killed) {
+                            console.log(`Force killing server with PID ${pid}`);
+                            execAsync(`pkill -9 -P ${pid}`).catch(() => {});
+                            process.kill(pid, 'SIGKILL');
+                        }
+                    } catch (error) {
+                        // Best effort cleanup
+                    }
+                }, 2000);
+            } catch (error) {
+                console.error('Error during deactivation cleanup:', error);
+            }
         }
     }
     devServerProcess = null;
     devServerWorkingDir = null;
+}
+
+// Setup file watcher for activity tracking
+function setupFileWatcher(context: vscode.ExtensionContext) {
+    const workspaceFolders = vscode.workspace.workspaceFolders;
+    if (!workspaceFolders) {
+        return;
+    }
+
+    // Watch for file changes in the workspace (for idle detection)
+    const pattern = new vscode.RelativePattern(workspaceFolders[0], '**/*');
+    fileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
+
+    const updateActivity = () => {
+        if (devServerProcess && !devServerProcess.killed) {
+            serverTracking.lastActivity = Date.now();
+        }
+    };
+
+    fileWatcher.onDidChange(updateActivity);
+    fileWatcher.onDidCreate(updateActivity);
+    fileWatcher.onDidDelete(updateActivity);
+
+    context.subscriptions.push(fileWatcher);
+}
+
+// Check auto-kill conditions
+async function checkAutoKillConditions() {
+    if (!devServerProcess || devServerProcess.killed) {
+        return;
+    }
+
+    const now = Date.now();
+    const autoKillTimeout = getConfig().get<number>('autoKillTimeout', 0);
+    const autoKillIdleTime = getConfig().get<number>('autoKillIdleTime', 0);
+
+    // Check timeout (total runtime)
+    if (autoKillTimeout > 0 && serverTracking.startTime > 0) {
+        const runtimeMinutes = (now - serverTracking.startTime) / (1000 * 60);
+        if (runtimeMinutes >= autoKillTimeout) {
+            showNotification('warning', `Dev server auto-killed after ${autoKillTimeout} minutes`);
+            await stopDevServer();
+            return;
+        }
+    }
+
+    // Check idle time
+    if (autoKillIdleTime > 0 && serverTracking.lastActivity > 0) {
+        const idleMinutes = (now - serverTracking.lastActivity) / (1000 * 60);
+        if (idleMinutes >= autoKillIdleTime) {
+            showNotification('warning', `Dev server auto-killed after ${autoKillIdleTime} minutes of inactivity`);
+            await stopDevServer();
+            return;
+        }
+    }
+
+    // Check max extra servers
+    const maxExtraServers = getConfig().get<number>('maxExtraServers', 0);
+    const enableAutoCleanup = getConfig().get<boolean>('enableAutoCleanup', false);
+
+    if (maxExtraServers > 0 || enableAutoCleanup) {
+        const allProcesses = await getRunningNuxtProcesses();
+        const managedPid = devServerProcess?.pid?.toString();
+
+        // Filter out our managed process
+        const extraProcesses = allProcesses.filter(p => p.pid !== managedPid);
+
+        if (maxExtraServers > 0 && extraProcesses.length > maxExtraServers) {
+            // Kill oldest extras (assuming lower PIDs are older)
+            const toKill = extraProcesses
+                .sort((a, b) => parseInt(a.pid) - parseInt(b.pid))
+                .slice(0, extraProcesses.length - maxExtraServers);
+
+            for (const proc of toKill) {
+                if (isValidPID(proc.pid)) {
+                    try {
+                        await killProcessGracefully(proc.pid);
+                        showNotification('info', `Auto-killed extra server (PID ${proc.pid}) due to maxExtraServers limit`);
+                    } catch (error) {
+                        console.error(`Failed to kill extra server ${proc.pid}:`, error);
+                    }
+                }
+            }
+        } else if (enableAutoCleanup && extraProcesses.length > 0) {
+            showNotification('warning', `${extraProcesses.length} unmanaged Nuxt server(s) detected`);
+        }
+    }
 }
 
 async function showQuickPick() {
@@ -169,6 +379,59 @@ async function getRunningNuxtProcessCount(): Promise<number> {
     return processes.length;
 }
 
+// Helper function to kill a process gracefully (SIGTERM then SIGKILL)
+async function killProcessGracefully(pid: string): Promise<void> {
+    if (!isValidPID(pid)) {
+        throw new Error(`Invalid PID: ${pid}`);
+    }
+
+    const gracefulTimeout = getConfig().get<number>('gracefulShutdownTimeout', 5000);
+
+    try {
+        // Try graceful shutdown first
+        process.kill(parseInt(pid), 'SIGTERM');
+        console.log(`Sent SIGTERM to PID ${pid}`);
+
+        // Wait for graceful shutdown
+        await new Promise((resolve) => {
+            const checkInterval = setInterval(() => {
+                try {
+                    // Check if process still exists (signal 0 doesn't kill, just checks)
+                    process.kill(parseInt(pid), 0);
+                } catch (error) {
+                    // Process doesn't exist anymore
+                    clearInterval(checkInterval);
+                    resolve(true);
+                }
+            }, 100);
+
+            // Timeout for graceful shutdown
+            setTimeout(() => {
+                clearInterval(checkInterval);
+                resolve(false);
+            }, gracefulTimeout);
+        });
+
+        // If process still exists, force kill
+        try {
+            process.kill(parseInt(pid), 0);
+            // Still running, force kill
+            console.log(`Process ${pid} still running after SIGTERM, sending SIGKILL`);
+            await execAsync(`kill -9 ${pid}`);
+            await execAsync(`pkill -9 -P ${pid}`).catch(() => {}); // Kill children
+        } catch (error) {
+            // Process already dead
+            console.log(`Process ${pid} terminated gracefully`);
+        }
+    } catch (error: any) {
+        if (error.code === 'ESRCH') {
+            // Process doesn't exist, that's fine
+            return;
+        }
+        throw error;
+    }
+}
+
 async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
     try {
         // First, find all node processes that contain "nuxt" and "dev" or "preview"
@@ -189,6 +452,12 @@ async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
 
             const pid = match[1];
             const fullCommand = match[2];
+
+            // Validate PID before using it
+            if (!isValidPID(pid)) {
+                console.warn(`Invalid PID detected: ${pid}`);
+                continue;
+            }
 
             // Skip if already processed
             if (processMap.has(pid)) {
@@ -222,10 +491,16 @@ async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
                 // Ignore if we can't get working dir
             }
 
+            // Sanitize working directory path
+            const homeDir = process.env.HOME;
+            if (homeDir && workingDir.startsWith(homeDir)) {
+                workingDir = workingDir.replace(homeDir, '~');
+            }
+
             processMap.set(pid, {
                 pid,
                 command: fullCommand.length > 80 ? fullCommand.substring(0, 77) + '...' : fullCommand,
-                workingDir: workingDir.replace(process.env.HOME || '', '~'),
+                workingDir,
                 port
             });
         }
@@ -233,19 +508,20 @@ async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
         return Array.from(processMap.values());
     } catch (error) {
         // If ps fails, return empty
+        console.error('Error getting running Nuxt processes:', error);
         return [];
     }
 }
 
 async function startDevServer() {
     if (devServerProcess && !devServerProcess.killed) {
-        vscode.window.showWarningMessage('Dev server is already running');
+        showNotification('warning', 'Dev server is already running');
         return;
     }
 
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
-        vscode.window.showErrorMessage('No workspace folder open');
+        showNotification('error', 'No workspace folder open');
         return;
     }
 
@@ -258,66 +534,120 @@ async function startDevServer() {
                             fs.existsSync(path.join(rootPath, 'nuxt.config.mts'));
 
     if (!nuxtConfigExists) {
-        vscode.window.showErrorMessage('No nuxt.config file found in workspace');
+        showNotification('error', 'No nuxt.config file found in workspace');
         return;
     }
 
-    vscode.window.showInformationMessage('Starting Nuxt dev server...');
+    // Show progress notification
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: "Starting Nuxt dev server...",
+        cancellable: false
+    }, async (progress) => {
+        progress.report({ increment: 0 });
 
-    // Store the working directory for later cleanup
-    devServerWorkingDir = rootPath;
+        // Store the working directory for later cleanup
+        devServerWorkingDir = rootPath;
 
-    // Determine package manager
-    const packageManager = fs.existsSync(path.join(rootPath, 'yarn.lock')) ? 'yarn' :
-                          fs.existsSync(path.join(rootPath, 'pnpm-lock.yaml')) ? 'pnpm' :
-                          fs.existsSync(path.join(rootPath, 'bun.lockb')) ? 'bun' : 'npm';
+        // Get custom command or auto-detect
+        const customCommand = getConfig().get<string>('customDevCommand', '');
+        let command: string;
+        let args: string[];
 
-    const args = packageManager === 'npm' ? ['run', 'dev'] : ['dev'];
+        if (customCommand) {
+            // Parse custom command
+            const parts = customCommand.split(' ');
+            command = parts[0];
+            args = parts.slice(1);
+        } else {
+            // Determine package manager
+            const packageManager = fs.existsSync(path.join(rootPath, 'yarn.lock')) ? 'yarn' :
+                                  fs.existsSync(path.join(rootPath, 'pnpm-lock.yaml')) ? 'pnpm' :
+                                  fs.existsSync(path.join(rootPath, 'bun.lockb')) ? 'bun' : 'npm';
 
-    devServerProcess = spawn(packageManager, args, {
-        cwd: rootPath,
-        shell: true,
-        detached: false,
-        env: { ...process.env }
-    });
-
-    // Create output channel for logs
-    const outputChannel = vscode.window.createOutputChannel('Nuxt Dev Server');
-    outputChannel.show(true);
-
-    devServerProcess.stdout?.on('data', (data) => {
-        const output = data.toString();
-        outputChannel.append(output);
-
-        // Extract port from output
-        const portMatch = output.match(/http:\/\/localhost:(\d+)/);
-        if (portMatch) {
-            serverPort = parseInt(portMatch[1]);
-            serverUrl = `http://localhost:${serverPort}`;
+            command = packageManager;
+            args = packageManager === 'npm' ? ['run', 'dev'] : ['dev'];
         }
-    });
 
-    devServerProcess.stderr?.on('data', (data) => {
-        outputChannel.append(data.toString());
-    });
+        progress.report({ increment: 20 });
 
-    devServerProcess.on('close', (code) => {
-        outputChannel.appendLine(`\nServer process closed with code ${code}`);
-        devServerProcess = null;
-        devServerWorkingDir = null;
-        updateStatusBar();
-    });
+        devServerProcess = spawn(command, args, {
+            cwd: rootPath,
+            shell: true,
+            detached: false,
+            env: { ...process.env }
+        });
 
-    devServerProcess.on('exit', (code, signal) => {
-        outputChannel.appendLine(`\nServer process exited with code ${code}, signal ${signal}`);
-    });
+        // Initialize server tracking
+        const now = Date.now();
+        serverTracking.startTime = now;
+        serverTracking.lastActivity = now;
 
-    devServerProcess.on('error', (error) => {
-        vscode.window.showErrorMessage(`Failed to start server: ${error.message}`);
-        outputChannel.appendLine(`Error: ${error.message}`);
-        devServerProcess = null;
-        devServerWorkingDir = null;
-        updateStatusBar();
+        // Get default port from config
+        serverPort = getConfig().get<number>('defaultPort', 3000);
+        serverUrl = `http://localhost:${serverPort}`;
+
+        // Get or create output channel for logs
+        const outputChannel = getOutputChannel();
+        outputChannel.clear();
+        outputChannel.show(true);
+        outputChannel.appendLine(`Starting Nuxt dev server with command: ${command} ${args.join(' ')}`);
+        outputChannel.appendLine(`Working directory: ${rootPath}`);
+        outputChannel.appendLine(`Timestamp: ${new Date().toISOString()}\n`);
+
+        progress.report({ increment: 50 });
+
+        devServerProcess.stdout?.on('data', (data) => {
+            const output = data.toString();
+            outputChannel.append(output);
+
+            // Update activity timestamp
+            serverTracking.lastActivity = Date.now();
+
+            // Extract port from output
+            const portMatch = output.match(/http:\/\/localhost:(\d+)/);
+            if (portMatch) {
+                serverPort = parseInt(portMatch[1]);
+                serverUrl = `http://localhost:${serverPort}`;
+                showNotification('info', `Nuxt server started on ${serverUrl}`);
+            }
+        });
+
+        devServerProcess.stderr?.on('data', (data) => {
+            const output = data.toString();
+            outputChannel.append(output);
+            serverTracking.lastActivity = Date.now();
+        });
+
+        devServerProcess.on('close', (code) => {
+            outputChannel.appendLine(`\n[${new Date().toISOString()}] Server process closed with code ${code}`);
+            devServerProcess = null;
+            devServerWorkingDir = null;
+            serverTracking.startTime = 0;
+            serverTracking.lastActivity = 0;
+            updateStatusBar();
+
+            if (code !== 0 && code !== null) {
+                showNotification('error', `Dev server exited with code ${code}`);
+            }
+        });
+
+        devServerProcess.on('exit', (code, signal) => {
+            outputChannel.appendLine(`[${new Date().toISOString()}] Server process exited with code ${code}, signal ${signal}`);
+        });
+
+        devServerProcess.on('error', (error) => {
+            showNotification('error', `Failed to start server: ${error.message}`);
+            outputChannel.appendLine(`\nError: ${error.message}`);
+            devServerProcess = null;
+            devServerWorkingDir = null;
+            serverTracking.startTime = 0;
+            serverTracking.lastActivity = 0;
+            updateStatusBar();
+        });
+
+        progress.report({ increment: 100 });
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Show progress briefly
     });
 
     updateStatusBar();
@@ -325,73 +655,110 @@ async function startDevServer() {
 
 async function stopDevServer() {
     if (!devServerProcess || devServerProcess.killed) {
-        vscode.window.showWarningMessage('No managed dev server is running');
+        showNotification('warning', 'No managed dev server is running');
         return;
     }
 
     const pid = devServerProcess.pid;
     const workingDir = devServerWorkingDir;
 
+    if (!pid || !isValidPID(pid)) {
+        console.error('Invalid PID for dev server process');
+        devServerProcess = null;
+        devServerWorkingDir = null;
+        serverTracking.startTime = 0;
+        serverTracking.lastActivity = 0;
+        updateStatusBar();
+        return;
+    }
+
     console.log(`Stopping dev server with PID ${pid}, working dir: ${workingDir}`);
 
-    try {
-        // Approach 1: Find and kill all nuxt processes in the working directory
-        if (workingDir) {
-            try {
-                console.log(`Finding nuxt processes in ${workingDir}`);
-                const processes = await getRunningNuxtProcesses();
-                const matchingProcesses = processes.filter(proc => {
-                    const procDir = proc.workingDir.replace('~', process.env.HOME || '');
-                    return procDir === workingDir;
-                });
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: "Stopping Nuxt dev server...",
+        cancellable: false
+    }, async (progress) => {
+        progress.report({ increment: 0 });
 
-                console.log(`Found ${matchingProcesses.length} matching processes`);
-                for (const proc of matchingProcesses) {
-                    console.log(`Killing process ${proc.pid} on port ${proc.port}`);
-                    try {
-                        await execAsync(`kill -9 ${proc.pid}`);
-                    } catch (error) {
-                        console.log(`Failed to kill ${proc.pid}:`, error);
+        try {
+            // Approach 1: Find and gracefully kill all nuxt processes in the working directory
+            if (workingDir) {
+                try {
+                    console.log(`Finding nuxt processes in ${workingDir}`);
+                    const processes = await getRunningNuxtProcesses();
+                    const homeDir = process.env.HOME || '';
+                    const matchingProcesses = processes.filter(proc => {
+                        const procDir = proc.workingDir.replace('~', homeDir);
+                        return procDir === workingDir;
+                    });
+
+                    console.log(`Found ${matchingProcesses.length} matching processes`);
+                    progress.report({ increment: 30 });
+
+                    for (const proc of matchingProcesses) {
+                        console.log(`Gracefully killing process ${proc.pid} on port ${proc.port}`);
+                        try {
+                            await killProcessGracefully(proc.pid);
+                        } catch (error) {
+                            console.log(`Failed to kill ${proc.pid}:`, error);
+                        }
                     }
+                } catch (error) {
+                    console.log(`Failed to find/kill nuxt processes:`, error);
+                }
+            }
+
+            progress.report({ increment: 60 });
+
+            // Approach 2: Kill the shell process tree gracefully
+            try {
+                // Try graceful shutdown first
+                console.log(`Sending SIGTERM to process tree for PID ${pid}`);
+                process.kill(pid, 'SIGTERM');
+
+                // Wait for graceful shutdown
+                const gracefulTimeout = getConfig().get<number>('gracefulShutdownTimeout', 5000);
+                await new Promise(resolve => setTimeout(resolve, gracefulTimeout));
+
+                progress.report({ increment: 80 });
+
+                // Check if process still exists
+                try {
+                    process.kill(pid, 0); // Check if alive
+                    // Still running, force kill
+                    console.log(`Process ${pid} still running, forcing shutdown`);
+                    await execAsync(`pkill -9 -P ${pid}`).catch(() => {});
+                    process.kill(pid, 'SIGKILL');
+                } catch (error) {
+                    // Process already terminated
+                    console.log(`Process ${pid} terminated gracefully`);
                 }
             } catch (error) {
-                console.log(`Failed to find/kill nuxt processes:`, error);
+                console.log(`Error during shutdown:`, error);
             }
+
+            // Wait a moment for complete cleanup
+            await new Promise(resolve => setTimeout(resolve, 500));
+
+            progress.report({ increment: 100 });
+
+            devServerProcess = null;
+            devServerWorkingDir = null;
+            serverTracking.startTime = 0;
+            serverTracking.lastActivity = 0;
+            showNotification('info', 'Dev server stopped');
+            updateStatusBar();
+        } catch (error: any) {
+            console.error(`Error stopping dev server:`, error);
+            showNotification('error', `Failed to stop server: ${error.message}`);
+            devServerProcess = null;
+            devServerWorkingDir = null;
+            serverTracking.startTime = 0;
+            serverTracking.lastActivity = 0;
+            updateStatusBar();
         }
-
-        // Approach 2: Kill the shell process tree
-        if (pid) {
-            try {
-                // Kill all descendants recursively
-                console.log(`Killing process tree for PID ${pid}`);
-                await execAsync(`pkill -9 -P ${pid}`);
-            } catch (error) {
-                console.log(`No child processes found for PID ${pid}`);
-            }
-
-            // Kill the main shell process
-            try {
-                console.log(`Sending SIGKILL to PID ${pid}`);
-                process.kill(pid, 'SIGKILL');
-            } catch (error) {
-                console.log(`Failed to kill ${pid}:`, error);
-            }
-        }
-
-        // Wait a moment for processes to die
-        await new Promise(resolve => setTimeout(resolve, 500));
-
-        devServerProcess = null;
-        devServerWorkingDir = null;
-        vscode.window.showInformationMessage('Dev server stopped');
-        updateStatusBar();
-    } catch (error: any) {
-        console.error(`Error stopping dev server:`, error);
-        vscode.window.showErrorMessage(`Failed to stop server: ${error.message}`);
-        devServerProcess = null;
-        devServerWorkingDir = null;
-        updateStatusBar();
-    }
+    });
 }
 
 async function restartDevServer() {
@@ -482,17 +849,24 @@ async function listAndKillInstances() {
         let killedCount = 0;
         for (const item of selected) {
             try {
-                await execAsync(`kill -9 ${item.process.pid}`);
-                if (devServerProcess && devServerProcess.pid?.toString() === item.process.pid) {
-                    devServerProcess = null;
+                if (isValidPID(item.process.pid)) {
+                    await killProcessGracefully(item.process.pid);
+                    if (devServerProcess && devServerProcess.pid?.toString() === item.process.pid) {
+                        devServerProcess = null;
+                        devServerWorkingDir = null;
+                        serverTracking.startTime = 0;
+                        serverTracking.lastActivity = 0;
+                    }
+                    killedCount++;
+                } else {
+                    console.warn(`Skipping invalid PID: ${item.process.pid}`);
                 }
-                killedCount++;
             } catch (error: any) {
-                vscode.window.showErrorMessage(`Failed to kill PID ${item.process.pid}: ${error.message}`);
+                showNotification('error', `Failed to kill PID ${item.process.pid}: ${error.message}`);
             }
         }
 
-        vscode.window.showInformationMessage(`Killed ${killedCount} of ${selected.length} instance(s)`);
+        showNotification('info', `Killed ${killedCount} of ${selected.length} instance(s)`);
         updateStatusBar();
     } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to list instances: ${error.message}`);
@@ -501,10 +875,11 @@ async function listAndKillInstances() {
 
 async function killAllNuxtInstances() {
     try {
-        const count = await getRunningNuxtProcessCount();
+        const processes = await getRunningNuxtProcesses();
+        const count = processes.length;
 
         if (count === 0) {
-            vscode.window.showInformationMessage('No Nuxt instances found');
+            showNotification('info', 'No Nuxt instances found');
             return;
         }
 
@@ -519,22 +894,31 @@ async function killAllNuxtInstances() {
             return;
         }
 
-        // Kill all node processes running nuxt
-        await execAsync('pkill -f "node.*nuxt.*(dev|preview)"');
+        // Kill each process gracefully
+        let killedCount = 0;
+        for (const proc of processes) {
+            if (isValidPID(proc.pid)) {
+                try {
+                    await killProcessGracefully(proc.pid);
+                    killedCount++;
 
-        if (devServerProcess) {
-            devServerProcess = null;
+                    // Check if it was our managed process
+                    if (devServerProcess && devServerProcess.pid?.toString() === proc.pid) {
+                        devServerProcess = null;
+                        devServerWorkingDir = null;
+                        serverTracking.startTime = 0;
+                        serverTracking.lastActivity = 0;
+                    }
+                } catch (error) {
+                    console.error(`Failed to kill process ${proc.pid}:`, error);
+                }
+            }
         }
 
-        vscode.window.showInformationMessage(`Killed ${count} Nuxt instance(s)`);
+        showNotification('info', `Killed ${killedCount} of ${count} Nuxt instance(s)`);
         updateStatusBar();
     } catch (error: any) {
-        if (error.code === 1) {
-            // pkill returns 1 if no processes found, which is fine
-            vscode.window.showInformationMessage('No Nuxt instances found');
-        } else {
-            vscode.window.showErrorMessage(`Failed to kill instances: ${error.message}`);
-        }
+        showNotification('error', `Failed to kill instances: ${error.message}`);
     }
 }
 
@@ -552,7 +936,7 @@ async function openInBrowser() {
 async function showNuxtVersion() {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
-        vscode.window.showErrorMessage('No workspace folder open');
+        showNotification('error', 'No workspace folder open');
         return;
     }
 
@@ -564,7 +948,10 @@ async function showNuxtVersion() {
         let declaredVersion = 'Not found';
 
         if (fs.existsSync(packageJsonPath)) {
-            const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+            const packageJson = safeJSONParse<any>(
+                fs.readFileSync(packageJsonPath, 'utf8'),
+                {}
+            );
             const nuxtVersion = packageJson.dependencies?.nuxt ||
                               packageJson.devDependencies?.nuxt;
             if (nuxtVersion) {
@@ -576,12 +963,11 @@ async function showNuxtVersion() {
         let installedVersion = 'Not installed';
         const nuxtPackageJsonPath = path.join(rootPath, 'node_modules', 'nuxt', 'package.json');
         if (fs.existsSync(nuxtPackageJsonPath)) {
-            try {
-                const nuxtPackageJson = JSON.parse(fs.readFileSync(nuxtPackageJsonPath, 'utf8'));
-                installedVersion = nuxtPackageJson.version || 'Unknown';
-            } catch (error) {
-                installedVersion = 'Unable to read';
-            }
+            const nuxtPackageJson = safeJSONParse<any>(
+                fs.readFileSync(nuxtPackageJsonPath, 'utf8'),
+                {}
+            );
+            installedVersion = nuxtPackageJson.version || 'Unknown';
         }
 
         // Check for running processes and get their versions
@@ -606,13 +992,23 @@ async function showNuxtVersion() {
 
                 // Try to get version from the specific process's working directory
                 try {
-                    const procNuxtPkg = path.join(proc.workingDir.replace('~', process.env.HOME || ''), 'node_modules', 'nuxt', 'package.json');
+                    const homeDir = process.env.HOME || '';
+                    const procNuxtPkg = path.join(
+                        proc.workingDir.replace('~', homeDir),
+                        'node_modules',
+                        'nuxt',
+                        'package.json'
+                    );
                     if (fs.existsSync(procNuxtPkg)) {
-                        const procPkgJson = JSON.parse(fs.readFileSync(procNuxtPkg, 'utf8'));
+                        const procPkgJson = safeJSONParse<any>(
+                            fs.readFileSync(procNuxtPkg, 'utf8'),
+                            {}
+                        );
                         lines.push(`     Version: ${procPkgJson.version || 'Unknown'}`);
                     }
                 } catch (error) {
                     // Couldn't read version for this process
+                    console.error(`Error reading version for PID ${proc.pid}:`, error);
                 }
             });
         }
@@ -625,8 +1021,8 @@ async function showNuxtVersion() {
         outputChannel.appendLine(message);
         outputChannel.show();
 
-        vscode.window.showInformationMessage(`Nuxt ${installedVersion} installed. ${runningCount} instance(s) running.`);
+        showNotification('info', `Nuxt ${installedVersion} installed. ${runningCount} instance(s) running.`);
     } catch (error: any) {
-        vscode.window.showErrorMessage(`Failed to get version: ${error.message}`);
+        showNotification('error', `Failed to get version: ${error.message}`);
     }
 }

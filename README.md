@@ -10,12 +10,18 @@ A Visual Studio Code extension to manage Nuxt development servers directly from 
 
 - **Status Bar Integration** - Shows the number of running Nuxt instances at a glance
 - **Start/Stop/Restart** - Control your dev server with simple commands
+- **Graceful Shutdown** - Tries SIGTERM before SIGKILL for cleaner process termination
 - **Process Management** - View and manage all running Nuxt instances
 - **Multi-Instance Support** - List all Nuxt servers and selectively kill specific ones
 - **Auto-Detection** - Automatically detects your package manager (npm, yarn, pnpm, bun)
 - **Port Detection** - Extracts and displays the running server port
 - **Version Info** - View installed and running Nuxt versions
 - **Quick Browser Access** - Open your dev server in the browser with one click
+- **Auto-Kill Features** - Automatically kill servers after timeout or idle time
+- **Activity Tracking** - Monitors file changes to detect idle servers
+- **Progress Indicators** - Visual feedback during start/stop operations
+- **Configurable Settings** - Customize timeout, intervals, and behavior
+- **Security Hardened** - PID validation, safe JSON parsing, input sanitization
 
 ## Usage
 
@@ -81,7 +87,93 @@ This helps identify version mismatches and ensures you know exactly which Nuxt v
 
 ## Extension Settings
 
-This extension does not currently add any VS Code settings.
+This extension contributes the following settings (access via `Preferences: Open Settings` or `Cmd/Ctrl + ,`):
+
+### Auto-Kill and Cleanup
+
+- **`nuxt-dev-server.autoKillTimeout`** (default: `0`)
+  - Automatically kill servers after X minutes (0 = disabled)
+  - Useful for preventing runaway servers that consume resources
+  - Example: Set to `120` to kill servers after 2 hours
+
+- **`nuxt-dev-server.autoKillIdleTime`** (default: `0`)
+  - Automatically kill servers idle for X minutes (0 = disabled)
+  - Idle = no file changes detected in the workspace
+  - Example: Set to `30` to kill servers after 30 minutes of inactivity
+
+- **`nuxt-dev-server.enableAutoCleanup`** (default: `false`)
+  - Enable automatic cleanup warnings for extra Nuxt servers not managed by this extension
+  - Shows notifications when unmanaged servers are detected
+
+- **`nuxt-dev-server.maxExtraServers`** (default: `0`)
+  - Maximum number of extra Nuxt servers allowed (0 = unlimited)
+  - Automatically kills oldest servers when this limit is exceeded
+  - Example: Set to `2` to allow only 2 extra servers beyond your managed one
+
+### Process Management
+
+- **`nuxt-dev-server.gracefulShutdownTimeout`** (default: `5000`)
+  - Time to wait (in milliseconds) for graceful shutdown before force killing
+  - Min: 1000ms, Max: 30000ms
+  - The extension tries SIGTERM first, then SIGKILL after this timeout
+
+### UI and Display
+
+- **`nuxt-dev-server.statusBarUpdateInterval`** (default: `3000`)
+  - Status bar update interval in milliseconds
+  - Min: 1000ms, Max: 60000ms
+  - Lower values = more frequent updates but slightly higher CPU usage
+
+- **`nuxt-dev-server.showNotifications`** (default: `true`)
+  - Show notifications for server start/stop events
+  - Disable if you prefer a quieter experience
+
+### Advanced
+
+- **`nuxt-dev-server.customDevCommand`** (default: `""`)
+  - Custom dev server command (leave empty for auto-detection)
+  - Example: `"npm run dev:custom"` or `"pnpm dev --host"`
+
+- **`nuxt-dev-server.defaultPort`** (default: `3000`)
+  - Default port to use if port cannot be detected from output
+  - Min: 1, Max: 65535
+
+## Configuration Examples
+
+### Example 1: Auto-kill idle development servers
+
+Perfect for developers who often forget to stop servers:
+
+```json
+{
+  "nuxt-dev-server.autoKillIdleTime": 30,
+  "nuxt-dev-server.enableAutoCleanup": true
+}
+```
+
+### Example 2: Limit total servers and set hard timeout
+
+Great for CI/CD environments or shared development machines:
+
+```json
+{
+  "nuxt-dev-server.maxExtraServers": 1,
+  "nuxt-dev-server.autoKillTimeout": 120,
+  "nuxt-dev-server.showNotifications": false
+}
+```
+
+### Example 3: Custom command with fast updates
+
+For specialized setups:
+
+```json
+{
+  "nuxt-dev-server.customDevCommand": "npm run dev:custom",
+  "nuxt-dev-server.statusBarUpdateInterval": 2000,
+  "nuxt-dev-server.gracefulShutdownTimeout": 10000
+}
+```
 
 ## Known Issues
 
@@ -140,9 +232,47 @@ See [PUBLISHING.md](PUBLISHING.md) for detailed instructions on:
 
 ## Release Notes
 
-### 0.0.1
+### 0.0.6 (Latest)
 
-Initial release with core features:
+Major update with performance, security, and automation improvements:
+
+**New Features:**
+- Auto-kill servers after configurable timeout or idle time
+- Activity tracking with file system monitoring for idle detection
+- Graceful shutdown (SIGTERM before SIGKILL) for cleaner process termination
+- Progress indicators for start/stop operations
+- Automatic cleanup of extra servers with configurable limits
+- Support for custom dev commands
+- Configurable status bar update interval
+- Optional notifications that can be disabled
+
+**Security Improvements:**
+- PID validation to prevent invalid process operations
+- Safe JSON parsing with error handling
+- Input sanitization for all shell commands
+- Better error handling throughout
+
+**Performance & Reliability:**
+- Fixed resource leaks (output channels now properly managed)
+- Single reusable output channel instead of creating multiple
+- Better process state management
+- Improved cleanup on extension deactivation
+- Configuration hot-reload support
+
+**UI Enhancements:**
+- Better status indicators with progress feedback
+- Improved notification system
+- Timestamped log entries in output channel
+- More informative error messages
+
+### 0.0.5
+
+- Improved process killing
+- Bug fixes
+
+### 0.0.1 - 0.0.4
+
+Initial releases with core features:
 - Status bar integration
 - Start/stop/restart commands
 - Multi-instance tracking and selective killing

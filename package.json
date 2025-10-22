@@ -2,7 +2,7 @@
   "name": "nuxt-dev-server",
   "displayName": "Nuxt Dev Server Manager",
   "description": "Manage Nuxt development servers with status bar integration",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "publisher": "pstuart",
   "author": {
     "name": "Patrick Stuart"
@@ -64,7 +64,66 @@
         "command": "nuxt-dev-server.showVersion",
         "title": "Nuxt: Show Version"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Nuxt Dev Server",
+      "properties": {
+        "nuxt-dev-server.autoKillTimeout": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Automatically kill servers after X minutes (0 = disabled). Useful for preventing runaway servers."
+        },
+        "nuxt-dev-server.autoKillIdleTime": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Automatically kill servers idle for X minutes (0 = disabled). Idle = no file changes detected."
+        },
+        "nuxt-dev-server.enableAutoCleanup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable automatic cleanup of extra Nuxt servers not managed by this extension."
+        },
+        "nuxt-dev-server.gracefulShutdownTimeout": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 1000,
+          "maximum": 30000,
+          "description": "Time to wait (in milliseconds) for graceful shutdown before force killing."
+        },
+        "nuxt-dev-server.statusBarUpdateInterval": {
+          "type": "number",
+          "default": 3000,
+          "minimum": 1000,
+          "maximum": 60000,
+          "description": "Status bar update interval in milliseconds."
+        },
+        "nuxt-dev-server.customDevCommand": {
+          "type": "string",
+          "default": "",
+          "description": "Custom dev server command (leave empty for auto-detection). Example: 'npm run dev:custom'"
+        },
+        "nuxt-dev-server.defaultPort": {
+          "type": "number",
+          "default": 3000,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Default port to use if port cannot be detected from output."
+        },
+        "nuxt-dev-server.showNotifications": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show notifications for server start/stop events."
+        },
+        "nuxt-dev-server.maxExtraServers": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Maximum number of extra Nuxt servers allowed (0 = unlimited). Automatically kill oldest servers when exceeded."
+        }
+      }
+    }
   },
   "scripts": {
     "vscode:prepublish": "npm run compile",

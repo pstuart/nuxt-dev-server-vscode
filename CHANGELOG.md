@@ -5,17 +5,57 @@ All notable changes to the "Nuxt Dev Server Manager" extension will be documente
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.0.6] - 2025-01-22
+
+Major update with performance, security, and automation improvements.
+
+### Added
+- **Auto-Kill Features**: Automatically kill servers after configurable timeout or idle time
+- **Activity Tracking**: File system monitoring to detect idle servers
+- **Progress Indicators**: Visual feedback during start/stop operations
+- **Automatic Cleanup**: Configurable limits for extra servers with automatic cleanup
+- **Custom Commands**: Support for custom dev commands via settings
+- **Configurable Settings**: Nine new settings for customization
+  - `autoKillTimeout`: Auto-kill after X minutes of runtime
+  - `autoKillIdleTime`: Auto-kill after X minutes of inactivity
+  - `enableAutoCleanup`: Enable automatic cleanup warnings
+  - `maxExtraServers`: Limit number of extra servers
+  - `gracefulShutdownTimeout`: Timeout for graceful shutdown
+  - `statusBarUpdateInterval`: Configurable update frequency
+  - `customDevCommand`: Custom dev server command
+  - `defaultPort`: Default port fallback
+  - `showNotifications`: Toggle notifications on/off
+- **Configuration Hot-Reload**: Settings changes apply immediately
+- Timestamped log entries in output channel
+- Better status indicators with activity feedback
+
+### Changed
+- **Graceful Shutdown**: Now tries SIGTERM before SIGKILL for cleaner process termination
+- **Output Channel Management**: Single reusable output channel instead of creating multiple
+- **Notification System**: Improved with configurable enable/disable option
+- All error messages now use centralized notification system
+- Better process state management with tracking info
+- Improved cleanup on extension deactivation with graceful shutdown
 
 ### Fixed
-- Stop dev server now uses dual-approach killing strategy:
-  - First finds and kills all Nuxt processes in the working directory by matching paths
-  - Then kills the shell process tree as backup
-  - Uses SIGKILL (-9) for immediate termination to prevent zombie processes
-- Tracks working directory of managed server for accurate process identification
-- Improved cleanup on extension deactivation
-- Added proper async handling and timeout for graceful shutdown
-- Improved logging for process lifecycle events (exit, close, errors)
+- **Security**: PID validation to prevent invalid process operations
+- **Security**: Safe JSON parsing with error handling to prevent crashes
+- **Security**: Input sanitization for all shell commands
+- **Resource Leaks**: Output channels now properly disposed
+- **Resource Leaks**: File watchers properly cleaned up
+- **Resource Leaks**: Intervals properly cleared on deactivation
+- Better error handling throughout with proper try-catch blocks
+- Improved process killing with validation checks
+- Fixed potential race conditions in process management
+- Home directory path handling now more robust
+- Process tracking state properly reset on server stop
+
+### Security
+- Added PID validation regex to prevent command injection
+- Implemented safe JSON parsing wrapper to prevent crashes
+- Sanitized environment variable usage
+- Added validation checks before all shell command executions
+- Better error handling prevents information leaks
 
 ## [0.0.3] - 2025-09-30
 

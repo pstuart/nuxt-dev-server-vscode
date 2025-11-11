@@ -125,10 +125,10 @@
         },
         "nuxt-dev-server.updateInterval": {
           "type": "number",
-          "default": 3000,
+          "default": 5000,
           "minimum": 1000,
-          "maximum": 30000,
-          "description": "Status bar update interval in milliseconds"
+          "maximum": 60000,
+          "description": "Status bar update interval in milliseconds (higher = less CPU usage)"
         },
         "nuxt-dev-server.devCommand": {
           "type": "string",

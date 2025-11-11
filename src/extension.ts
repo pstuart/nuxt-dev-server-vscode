@@ -11,6 +11,7 @@ import {
 import { COMMANDS, OUTPUT_CHANNELS } from './constants';
 import { getOrCreateOutputChannel, showInfo, showWarning, showError, debugLog, disposeAllOutputChannels } from './utils';
 import { ProcessQuickPickItem } from './types';
+import { initializeAutoKill, cleanupAutoKill } from './autoKill';
 
 /**
  * Extension activation
@@ -29,6 +30,9 @@ export function activate(context: vscode.ExtensionContext) {
     // Initialize status bar
     const statusBar = initializeStatusBar(context);
     context.subscriptions.push(statusBar);
+
+    // Initialize auto-kill module
+    initializeAutoKill(context);
 
     // Register all commands
     context.subscriptions.push(
@@ -51,6 +55,9 @@ export function activate(context: vscode.ExtensionContext) {
  */
 export async function deactivate() {
     debugLog('Deactivating Nuxt Dev Server Manager');
+
+    // Cleanup auto-kill module
+    cleanupAutoKill();
 
     // Cleanup managed server
     await cleanupManagedServer();

@@ -1,10 +1,35 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
+import * as fs from 'fs/promises';
 import { NuxtVersionInfo } from './types';
 import { OUTPUT_CHANNELS } from './constants';
 import { getRunningNuxtProcesses } from './processManager';
 import { expandPath, debugLog, getErrorMessage, getOrCreateOutputChannel } from './utils';
+
+/**
+ * Safely parse JSON file content
+ */
+async function readJSONFile(filePath: string): Promise<any> {
+    try {
+        const content = await fs.readFile(filePath, 'utf8');
+        return JSON.parse(content);
+    } catch (error) {
+        debugLog(`Error reading/parsing JSON file ${filePath}:`, getErrorMessage(error));
+        return null;
+    }
+}
+
+/**
+ * Check if a file exists (async)
+ */
+async function fileExists(filePath: string): Promise<boolean> {
+    try {
+        await fs.access(filePath);
+        return true;
+    } catch {
+        return false;
+    }
+}
 
 /**
  * Get comprehensive Nuxt version information
@@ -19,11 +44,13 @@ export async function getNuxtVersionInfo(rootPath: string): Promise<NuxtVersionI
     // Get declared version from package.json
     try {
         const packageJsonPath = path.join(rootPath, 'package.json');
-        if (fs.existsSync(packageJsonPath)) {
-            const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
-            const nuxtVersion = packageJson.dependencies?.nuxt || packageJson.devDependencies?.nuxt;
-            if (nuxtVersion) {
-                versionInfo.declared = nuxtVersion;
+        if (await fileExists(packageJsonPath)) {
+            const packageJson = await readJSONFile(packageJsonPath);
+            if (packageJson) {
+                const nuxtVersion = packageJson.dependencies?.nuxt || packageJson.devDependencies?.nuxt;
+                if (nuxtVersion) {
+                    versionInfo.declared = nuxtVersion;
+                }
             }
         }
     } catch (error) {
@@ -33,9 +60,11 @@ export async function getNuxtVersionInfo(rootPath: string): Promise<NuxtVersionI
     // Get actual installed version from node_modules
     try {
         const nuxtPackageJsonPath = path.join(rootPath, 'node_modules', 'nuxt', 'package.json');
-        if (fs.existsSync(nuxtPackageJsonPath)) {
-            const nuxtPackageJson = JSON.parse(fs.readFileSync(nuxtPackageJsonPath, 'utf8'));
-            versionInfo.installed = nuxtPackageJson.version || 'Unknown';
+        if (await fileExists(nuxtPackageJsonPath)) {
+            const nuxtPackageJson = await readJSONFile(nuxtPackageJsonPath);
+            if (nuxtPackageJson && nuxtPackageJson.version) {
+                versionInfo.installed = nuxtPackageJson.version;
+            }
         }
     } catch (error) {
         debugLog('Error reading nuxt package.json:', getErrorMessage(error));
@@ -50,9 +79,11 @@ export async function getNuxtVersionInfo(rootPath: string): Promise<NuxtVersionI
 
             let version = 'Unknown';
             try {
-                if (fs.existsSync(procNuxtPkg)) {
-                    const procPkgJson = JSON.parse(fs.readFileSync(procNuxtPkg, 'utf8'));
-                    version = procPkgJson.version || 'Unknown';
+                if (await fileExists(procNuxtPkg)) {
+                    const procPkgJson = await readJSONFile(procNuxtPkg);
+                    if (procPkgJson && procPkgJson.version) {
+                        version = procPkgJson.version;
+                    }
                 }
             } catch (error) {
                 debugLog(`Error reading version for process ${proc.pid}:`, getErrorMessage(error));
@@ -89,7 +120,7 @@ export function formatVersionInfo(versionInfo: NuxtVersionInfo): string {
         lines.push('');
         lines.push('Active Servers:');
         versionInfo.running.forEach((server, idx) => {
-            lines.push(`  ${idx + 1}. Port ${server.port || 'Unknown'} - PID ${server.pid}`);
+            lines.push(`  ${idx + 1}. Port ${server.port ?? 'Unknown'} - PID ${server.pid}`);
             lines.push(`     ${server.workingDir}`);
             lines.push(`     Version: ${server.version}`);
         });

@@ -2,13 +2,22 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { NuxtProcess } from './types';
 import { PROCESS_PATTERNS, DEFAULT_CONFIG } from './constants';
-import { formatPathForDisplay, sanitizePid, debugLog, getErrorMessage, expandPath, sleep } from './utils';
+import { formatPathForDisplay, sanitizePid, debugLog, getErrorMessage, expandPath, sleep, showWarning } from './utils';
 
 const execAsync = promisify(exec);
 
 /**
+ * Track process detection failures
+ */
+let consecutiveFailures = 0;
+let lastWarningTime = 0;
+const WARNING_THROTTLE_MS = 60000; // Only warn once per minute
+
+/**
  * Get all running Nuxt processes with port-based detection
  * Only returns processes that are actually listening on ports (real servers)
+ *
+ * @returns Array of NuxtProcess objects, or empty array if none found or on error
  */
 export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
     try {
@@ -16,10 +25,24 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
 
         // Find all node processes that contain "nuxt" and "dev" or "preview"
         const psCommand = `ps -eo pid,command | grep -iE "${PROCESS_PATTERNS.NUXT_DEV_PREVIEW}" | grep -v grep`;
-        const { stdout: psOut } = await execAsync(psCommand);
+
+        let psOut: string;
+        try {
+            const result = await execAsync(psCommand);
+            psOut = result.stdout;
+        } catch (error: any) {
+            // grep returns exit code 1 when no matches found - this is normal
+            if (error.code === 1) {
+                debugLog('No Nuxt processes found (grep returned no matches)');
+                consecutiveFailures = 0; // Reset failure counter - this is expected
+                return [];
+            }
+            throw error; // Re-throw if it's a real error
+        }
 
         if (!psOut.trim()) {
-            debugLog('No Nuxt processes found');
+            debugLog('No Nuxt processes found (empty output)');
+            consecutiveFailures = 0; // Reset failure counter - this is expected
             return [];
         }
 
@@ -82,10 +105,31 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
 
         const processes = Array.from(processMap.values());
         debugLog(`Found ${processes.length} running Nuxt instances`);
+
+        // Reset failure counter on success
+        consecutiveFailures = 0;
+
         return processes;
     } catch (error) {
-        // If ps fails, return empty
-        debugLog('Error detecting processes:', getErrorMessage(error));
+        // Track failures and warn user if detection consistently fails
+        consecutiveFailures++;
+
+        const errorMsg = getErrorMessage(error);
+        debugLog(`Error detecting processes (failure #${consecutiveFailures}):`, errorMsg);
+
+        // Show warning to user if detection fails repeatedly (but throttle warnings)
+        const now = Date.now();
+        if (consecutiveFailures >= 3 && (now - lastWarningTime) > WARNING_THROTTLE_MS) {
+            lastWarningTime = now;
+            const platform = process.platform;
+            void showWarning(
+                `Process detection failing (${consecutiveFailures} consecutive failures). ` +
+                `This may be due to missing system tools (ps, lsof) or permissions. ` +
+                `Platform: ${platform}. Check the debug output for details.`
+            );
+        }
+
+        // Return empty array but user has been warned
         return [];
     }
 }

@@ -144,6 +144,36 @@
           "type": "boolean",
           "default": false,
           "description": "Enable debug logging to output channel"
+        },
+        "nuxt-dev-server.autoKillTimeout": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Automatically kill servers after X minutes (0 = disabled). Useful for preventing runaway servers."
+        },
+        "nuxt-dev-server.autoKillIdleTime": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Automatically kill servers idle for X minutes (0 = disabled). Idle = no file changes detected."
+        },
+        "nuxt-dev-server.enableAutoCleanup": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable automatic cleanup warnings for extra Nuxt servers not managed by this extension"
+        },
+        "nuxt-dev-server.maxExtraServers": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "Maximum number of extra Nuxt servers allowed (0 = unlimited). Automatically kills oldest servers when exceeded."
+        },
+        "nuxt-dev-server.gracefulShutdownTimeout": {
+          "type": "number",
+          "default": 5000,
+          "minimum": 1000,
+          "maximum": 30000,
+          "description": "Time to wait (in milliseconds) for graceful shutdown before force killing"
         }
       }
     }

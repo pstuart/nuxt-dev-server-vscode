@@ -53,6 +53,16 @@ export interface ExtensionConfig {
     openBrowserOnStart: boolean;
     /** Enable debug logging */
     debug: boolean;
+    /** Auto-kill server after X minutes (0 = disabled) */
+    autoKillTimeout: number;
+    /** Auto-kill server when idle for X minutes (0 = disabled) */
+    autoKillIdleTime: number;
+    /** Enable automatic cleanup warnings for extra servers */
+    enableAutoCleanup: boolean;
+    /** Maximum number of extra servers allowed (0 = unlimited) */
+    maxExtraServers: number;
+    /** Graceful shutdown timeout in milliseconds */
+    gracefulShutdownTimeout: number;
 }
 
 /**

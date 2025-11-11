@@ -79,10 +79,15 @@ export function getConfig(): ExtensionConfig {
         preferredPackageManager: config.get('preferredPackageManager', 'auto'),
         autoStartOnOpen: config.get('autoStartOnOpen', false),
         showNotifications: config.get('showNotifications', true),
-        updateInterval: config.get('updateInterval', 3000),
+        updateInterval: config.get('updateInterval', 5000),
         devCommand: config.get('devCommand', 'dev'),
         openBrowserOnStart: config.get('openBrowserOnStart', false),
         debug: config.get('debug', false),
+        autoKillTimeout: config.get('autoKillTimeout', 0),
+        autoKillIdleTime: config.get('autoKillIdleTime', 0),
+        enableAutoCleanup: config.get('enableAutoCleanup', false),
+        maxExtraServers: config.get('maxExtraServers', 0),
+        gracefulShutdownTimeout: config.get('gracefulShutdownTimeout', 5000),
     };
 }
 

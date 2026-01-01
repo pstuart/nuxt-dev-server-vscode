@@ -22,6 +22,7 @@ import {
     verifyProcessTerminated
 } from './processManager';
 import { onServerStart, onServerStop } from './autoKill';
+import { forceStatusBarUpdate } from './statusBar';
 
 const execAsync = promisify(exec);
 
@@ -103,6 +104,7 @@ export function isManagedServerRunning(): boolean {
  */
 export function clearManagedServer(): void {
     managedServer = null;
+    forceStatusBarUpdate();
 }
 
 /**
@@ -291,6 +293,7 @@ export async function startDevServer(): Promise<boolean> {
 
         if (managedServer?.process === childProcess) {
             managedServer = null;
+            forceStatusBarUpdate();
         }
     });
 
@@ -308,6 +311,7 @@ export async function startDevServer(): Promise<boolean> {
 
         if (managedServer?.process === childProcess) {
             managedServer = null;
+            forceStatusBarUpdate();
         }
     });
 
@@ -386,6 +390,7 @@ export async function stopDevServer(): Promise<boolean> {
         }
 
         managedServer = null;
+        forceStatusBarUpdate();
 
         // Notify auto-kill module that server has stopped
         onServerStop();
@@ -398,6 +403,7 @@ export async function stopDevServer(): Promise<boolean> {
         debugLog('Error stopping dev server:', getErrorMessage(error));
         await showError(`Failed to stop server: ${getErrorMessage(error)}`);
         managedServer = null;
+        forceStatusBarUpdate();
         onServerStop(); // Clear tracking even on error
         return false;
     }

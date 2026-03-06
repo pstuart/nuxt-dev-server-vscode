@@ -5,3 +5,9 @@ node_modules
 .DS_Store
 # Claude Code local settings
 .claude/
+
+# Standardized entries
+.nuxt/
+.output/
+.env
+dist/

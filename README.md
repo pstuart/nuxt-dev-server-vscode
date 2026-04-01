@@ -232,7 +232,11 @@ See [PUBLISHING.md](PUBLISHING.md) for detailed instructions on:
 
 ## Release Notes
 
-### 0.0.6 (Latest)
+### 0.0.8 (Latest)
+
+Refactored into multi-file architecture for maintainability. See CHANGELOG.md for full history.
+
+### 0.0.6
 
 Major update with performance, security, and automation improvements:
 

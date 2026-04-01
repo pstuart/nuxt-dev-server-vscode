@@ -44,8 +44,20 @@ To test during development:
 
 ## Architecture
 
-### Single-File Structure
-The entire extension logic is contained in `src/extension.ts` (~630 lines). This is a simple extension without complex abstractions.
+### Multi-File Architecture
+The extension is organized into focused modules under `src/`:
+
+| File | Responsibility |
+|------|---------------|
+| `extension.ts` | Entry point, command registration, activation/deactivation |
+| `devServer.ts` | Start/stop/restart dev server process management |
+| `processManager.ts` | Detect and kill running Nuxt processes system-wide |
+| `statusBar.ts` | VS Code status bar initialization and updates |
+| `versionDetector.ts` | Read declared/installed/running Nuxt versions |
+| `autoKill.ts` | Auto-kill by timeout or idle time logic |
+| `types.ts` | Shared TypeScript type definitions |
+| `constants.ts` | Shared constants (intervals, commands, etc.) |
+| `utils.ts` | Shared utility functions |
 
 ### Core State Management
 The extension maintains three critical pieces of global state:
@@ -65,13 +77,13 @@ This approach prevents false positives from counting build processes or child pr
 
 ### Process Lifecycle Management
 
-**Starting a server** (src/extension.ts:240-324):
+**Starting a server** (src/devServer.ts):
 - Detects package manager (npm/yarn/pnpm/bun) by checking for lock files
 - Spawns dev server using detected package manager
 - Captures stdout/stderr to output channel
 - Extracts port from server output (searches for `http://localhost:XXXX`)
 
-**Stopping a server** (src/extension.ts:326-395):
+**Stopping a server** (src/devServer.ts):
 Uses a two-pronged approach to ensure complete cleanup:
 1. **Working directory matching**: Find all Nuxt processes in the same working directory and kill them
 2. **Process tree cleanup**: Kill all child processes (`pkill -9 -P $pid`) then the parent shell
@@ -79,7 +91,7 @@ Uses a two-pronged approach to ensure complete cleanup:
 This dual approach handles cases where the spawned shell has child processes.
 
 ### Status Bar Updates
-The status bar updates every 3 seconds (src/extension.ts:46) and shows:
+The status bar updates every 3 seconds (src/statusBar.ts) and shows:
 - `⚡ Nuxt Dev (n)` - Your managed server is running (n = total instances)
 - `⚡ Nuxt (n)` - Other instances detected, no managed server
 - `⊘ Nuxt Dev` - No servers running
@@ -106,7 +118,7 @@ const portMatch = output.match(/http:\/\/localhost:(\d+)/);
 ```
 
 ### Process Cleanup on Deactivation
-When the extension deactivates (src/extension.ts:49-65), it attempts to clean up by:
+When the extension deactivates (src/extension.ts), it attempts to clean up by:
 1. Killing all child processes of the managed server
 2. Sending SIGKILL to the main process
 3. Using best-effort error handling (catches and ignores errors)

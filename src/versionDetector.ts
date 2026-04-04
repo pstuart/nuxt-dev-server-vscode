@@ -4,30 +4,24 @@ import * as fs from 'fs/promises';
 import { NuxtVersionInfo } from './types';
 import { OUTPUT_CHANNELS } from './constants';
 import { getRunningNuxtProcesses } from './processManager';
-import { expandPath, debugLog, getErrorMessage, getOrCreateOutputChannel } from './utils';
+import { expandPath, debugLog, getErrorMessage, getOrCreateOutputChannel, fileExists } from './utils';
+
+interface PackageJson {
+    version?: string;
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+}
 
 /**
  * Safely parse JSON file content
  */
-async function readJSONFile(filePath: string): Promise<any> {
+async function readJSONFile(filePath: string): Promise<PackageJson | null> {
     try {
         const content = await fs.readFile(filePath, 'utf8');
-        return JSON.parse(content);
+        return JSON.parse(content) as PackageJson;
     } catch (error) {
         debugLog(`Error reading/parsing JSON file ${filePath}:`, getErrorMessage(error));
         return null;
-    }
-}
-
-/**
- * Check if a file exists (async)
- */
-async function fileExists(filePath: string): Promise<boolean> {
-    try {
-        await fs.access(filePath);
-        return true;
-    } catch {
-        return false;
     }
 }
 
@@ -47,7 +41,7 @@ export async function getNuxtVersionInfo(rootPath: string): Promise<NuxtVersionI
         if (await fileExists(packageJsonPath)) {
             const packageJson = await readJSONFile(packageJsonPath);
             if (packageJson) {
-                const nuxtVersion = packageJson.dependencies?.nuxt || packageJson.devDependencies?.nuxt;
+                const nuxtVersion = packageJson.dependencies?.nuxt ?? packageJson.devDependencies?.nuxt;
                 if (nuxtVersion) {
                     versionInfo.declared = nuxtVersion;
                 }
@@ -62,7 +56,7 @@ export async function getNuxtVersionInfo(rootPath: string): Promise<NuxtVersionI
         const nuxtPackageJsonPath = path.join(rootPath, 'node_modules', 'nuxt', 'package.json');
         if (await fileExists(nuxtPackageJsonPath)) {
             const nuxtPackageJson = await readJSONFile(nuxtPackageJsonPath);
-            if (nuxtPackageJson && nuxtPackageJson.version) {
+            if (nuxtPackageJson?.version) {
                 versionInfo.installed = nuxtPackageJson.version;
             }
         }
@@ -81,7 +75,7 @@ export async function getNuxtVersionInfo(rootPath: string): Promise<NuxtVersionI
             try {
                 if (await fileExists(procNuxtPkg)) {
                     const procPkgJson = await readJSONFile(procNuxtPkg);
-                    if (procPkgJson && procPkgJson.version) {
+                    if (procPkgJson?.version) {
                         version = procPkgJson.version;
                     }
                 }
@@ -135,7 +129,7 @@ export function formatVersionInfo(versionInfo: NuxtVersionInfo): string {
 export async function showNuxtVersion(): Promise<void> {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
-        vscode.window.showErrorMessage('No workspace folder open');
+        void vscode.window.showErrorMessage('No workspace folder open');
         return;
     }
 
@@ -152,10 +146,10 @@ export async function showNuxtVersion(): Promise<void> {
         outputChannel.show();
 
         const runningCount = versionInfo.running.length;
-        vscode.window.showInformationMessage(
+        void vscode.window.showInformationMessage(
             `Nuxt ${versionInfo.installed} installed. ${runningCount} instance(s) running.`
         );
     } catch (error) {
-        vscode.window.showErrorMessage(`Failed to get version: ${getErrorMessage(error)}`);
+        void vscode.window.showErrorMessage(`Failed to get version: ${getErrorMessage(error)}`);
     }
 }

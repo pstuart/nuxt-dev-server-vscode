@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { getManagedServer, stopDevServer, isManagedServerRunning, clearManagedServer } from './devServer';
+import { getManagedServer, stopDevServer, isManagedServerRunning } from './devServer';
 import { getRunningNuxtProcesses, killProcess } from './processManager';
 import { debugLog, getConfig, showWarning, showInfo } from './utils';
 
@@ -13,7 +13,7 @@ interface AutoKillState {
     checkInterval: NodeJS.Timeout | null;
 }
 
-let autoKillState: AutoKillState = {
+const autoKillState: AutoKillState = {
     startTime: 0,
     lastActivity: 0,
     fileWatcher: null,
@@ -166,12 +166,10 @@ export function initializeAutoKill(context: vscode.ExtensionContext): void {
     setupFileWatcher(context);
 
     // Start auto-kill check interval (check every 30 seconds)
-    autoKillState.checkInterval = setInterval(async () => {
-        try {
-            await checkAutoKillConditions();
-        } catch (error) {
+    autoKillState.checkInterval = setInterval(() => {
+        void checkAutoKillConditions().catch((error: unknown) => {
             debugLog('Error in auto-kill check:', error);
-        }
+        });
     }, 30000);
 
     // Register cleanup

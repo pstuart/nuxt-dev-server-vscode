@@ -1,8 +1,7 @@
 import * as vscode from 'vscode';
-import { spawn, ChildProcess, exec } from 'child_process';
+import { spawn, exec } from 'child_process';
 import { promisify } from 'util';
 import * as path from 'path';
-import * as fs from 'fs/promises';
 import { ManagedServer, PackageManager } from './types';
 import { LOCK_FILES, NUXT_CONFIG_FILES, OUTPUT_CHANNELS, DEFAULT_CONFIG, PROCESS_PATTERNS } from './constants';
 import {
@@ -13,7 +12,8 @@ import {
     debugLog,
     getErrorMessage,
     getConfig,
-    sleep
+    sleep,
+    fileExists
 } from './utils';
 import {
     killProcessTree,
@@ -108,18 +108,6 @@ export function clearManagedServer(): void {
 }
 
 /**
- * Check if a file exists (async replacement for fs.existsSync)
- */
-async function fileExists(filePath: string): Promise<boolean> {
-    try {
-        await fs.access(filePath);
-        return true;
-    } catch {
-        return false;
-    }
-}
-
-/**
  * Detect package manager from lock files with binary verification
  */
 async function detectPackageManager(rootPath: string): Promise<PackageManager> {
@@ -130,7 +118,7 @@ async function detectPackageManager(rootPath: string): Promise<PackageManager> {
         const preferredManager = config.preferredPackageManager;
 
         if (!isValidPackageManager(preferredManager)) {
-            debugLog(`Invalid preferred package manager: ${preferredManager}`);
+            debugLog(`Invalid preferred package manager: ${String(preferredManager)}`);
         } else {
             const isAvailable = await isPackageManagerAvailable(preferredManager);
 
@@ -149,6 +137,7 @@ async function detectPackageManager(rootPath: string): Promise<PackageManager> {
         { lockFile: LOCK_FILES.YARN, manager: 'yarn' },
         { lockFile: LOCK_FILES.PNPM, manager: 'pnpm' },
         { lockFile: LOCK_FILES.BUN, manager: 'bun' },
+        { lockFile: LOCK_FILES.BUN_TEXT, manager: 'bun' },
     ];
 
     for (const { lockFile, manager } of detectionOrder) {
@@ -258,13 +247,13 @@ export async function startDevServer(): Promise<boolean> {
     let serverStarted = false;
 
     // Handle stdout
-    childProcess.stdout?.on('data', (data) => {
+    childProcess.stdout?.on('data', (data: Buffer) => {
         const output = data.toString();
         outputChannel.append(output);
 
         // Extract port from output
         const portMatch = output.match(PROCESS_PATTERNS.PORT_REGEX);
-        if (portMatch) {
+        if (portMatch?.[1]) {
             detectedPort = parseInt(portMatch[1], 10);
             detectedUrl = `http://localhost:${detectedPort}`;
             debugLog(`Detected server port: ${detectedPort}`);
@@ -275,14 +264,14 @@ export async function startDevServer(): Promise<boolean> {
 
                 // Open browser if configured
                 if (config.openBrowserOnStart) {
-                    vscode.env.openExternal(vscode.Uri.parse(detectedUrl));
+                    void vscode.env.openExternal(vscode.Uri.parse(detectedUrl));
                 }
             }
         }
     });
 
     // Handle stderr
-    childProcess.stderr?.on('data', (data) => {
+    childProcess.stderr?.on('data', (data: Buffer) => {
         outputChannel.append(data.toString());
     });
 
@@ -336,7 +325,7 @@ export async function startDevServer(): Promise<boolean> {
             await showInfo(`Nuxt dev server started on port ${actualPort}`);
 
             if (config.openBrowserOnStart) {
-                vscode.env.openExternal(vscode.Uri.parse(managedServer.url));
+                void vscode.env.openExternal(vscode.Uri.parse(managedServer.url));
             }
         }
 
@@ -431,7 +420,7 @@ export async function restartDevServer(): Promise<boolean> {
  * Cleanup on extension deactivation
  */
 export async function cleanupManagedServer(): Promise<void> {
-    if (managedServer && managedServer.process.pid) {
+    if (managedServer?.process.pid) {
         debugLog('Cleaning up managed server on deactivation');
         try {
             await killProcessTree(String(managedServer.process.pid));

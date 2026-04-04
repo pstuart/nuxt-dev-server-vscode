@@ -16,13 +16,13 @@ import { initializeAutoKill, cleanupAutoKill } from './autoKill';
 /**
  * Extension activation
  */
-export function activate(context: vscode.ExtensionContext) {
+export function activate(context: vscode.ExtensionContext): void {
     debugLog('Nuxt Dev Server Manager activated');
 
     // Check platform compatibility
     const platform = process.platform;
     if (platform !== 'darwin' && platform !== 'linux') {
-        vscode.window.showWarningMessage(
+        void vscode.window.showWarningMessage(
             `Nuxt Dev Server Manager: Limited support on ${platform}. This extension is optimized for macOS and Linux. Windows support is experimental.`
         );
     }
@@ -53,7 +53,7 @@ export function activate(context: vscode.ExtensionContext) {
 /**
  * Extension deactivation
  */
-export async function deactivate() {
+export async function deactivate(): Promise<void> {
     debugLog('Deactivating Nuxt Dev Server Manager');
 
     // Cleanup auto-kill module
@@ -74,14 +74,15 @@ export async function deactivate() {
 /**
  * Wrapper to handle command errors gracefully
  */
-function handleCommand<T>(fn: (...args: any[]) => Promise<T>) {
-    return async (...args: any[]) => {
+function handleCommand<T>(fn: (...args: unknown[]) => Promise<T>) {
+    return async (...args: unknown[]): Promise<T | undefined> => {
         try {
             return await fn(...args);
         } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             debugLog('Command error:', message);
             await showError(`Command failed: ${message}`);
+            return undefined;
         }
     };
 }
@@ -339,7 +340,7 @@ async function openInBrowser(): Promise<void> {
         const processes = await getRunningNuxtProcesses();
         if (processes.length > 0 && processes[0].port) {
             const url = `http://localhost:${processes[0].port}`;
-            vscode.env.openExternal(vscode.Uri.parse(url));
+            void vscode.env.openExternal(vscode.Uri.parse(url));
             return;
         }
 
@@ -347,5 +348,5 @@ async function openInBrowser(): Promise<void> {
         return;
     }
 
-    vscode.env.openExternal(vscode.Uri.parse(managedServer.url));
+    void vscode.env.openExternal(vscode.Uri.parse(managedServer.url));
 }

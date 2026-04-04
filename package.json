@@ -63,6 +63,10 @@
       {
         "command": "nuxt-dev-server.showVersion",
         "title": "Nuxt: Show Version"
+      },
+      {
+        "command": "nuxt-dev-server.showMenu",
+        "title": "Nuxt: Show Quick Menu"
       }
     ],
     "keybindings": [

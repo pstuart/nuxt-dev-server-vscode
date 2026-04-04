@@ -27,6 +27,7 @@ export const LOCK_FILES = {
     YARN: 'yarn.lock',
     PNPM: 'pnpm-lock.yaml',
     BUN: 'bun.lockb',
+    BUN_TEXT: 'bun.lock',
     NPM: 'package-lock.json',
 } as const;
 

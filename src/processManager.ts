@@ -30,9 +30,10 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
         try {
             const result = await execAsync(psCommand);
             psOut = result.stdout;
-        } catch (error: any) {
+        } catch (error: unknown) {
             // grep returns exit code 1 when no matches found - this is normal
-            if (error.code === 1) {
+            const execError = error as { code?: number };
+            if (execError.code === 1) {
                 debugLog('No Nuxt processes found (grep returned no matches)');
                 consecutiveFailures = 0; // Reset failure counter - this is expected
                 return [];

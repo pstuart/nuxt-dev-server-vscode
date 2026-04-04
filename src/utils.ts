@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs/promises';
 import { OUTPUT_CHANNELS, CONFIG_SECTION } from './constants';
 import { ExtensionConfig } from './types';
 
@@ -32,7 +33,7 @@ export function disposeAllOutputChannels(): void {
  * Format a file path for display by replacing home directory with ~
  */
 export function formatPathForDisplay(filePath: string): string {
-    const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+    const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? '';
     if (homeDir && filePath.startsWith(homeDir)) {
         return filePath.replace(homeDir, '~');
     }
@@ -43,7 +44,7 @@ export function formatPathForDisplay(filePath: string): string {
  * Expand a path by replacing ~ with the home directory
  */
 export function expandPath(filePath: string): string {
-    const homeDir = process.env.HOME || process.env.USERPROFILE || '';
+    const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? '';
     if (filePath.startsWith('~') && homeDir) {
         return filePath.replace('~', homeDir);
     }
@@ -170,4 +171,16 @@ export function truncate(str: string, maxLength: number): string {
         return str;
     }
     return str.substring(0, maxLength - 3) + '...';
+}
+
+/**
+ * Check if a file exists (async)
+ */
+export async function fileExists(filePath: string): Promise<boolean> {
+    try {
+        await fs.access(filePath);
+        return true;
+    } catch {
+        return false;
+    }
 }

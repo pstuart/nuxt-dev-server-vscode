@@ -23,7 +23,7 @@ export function initializeStatusBar(context: vscode.ExtensionContext): vscode.St
     context.subscriptions.push(statusBarItem);
 
     // Initial update
-    updateStatusBar();
+    void updateStatusBar();
 
     // Start periodic updates
     startStatusBarUpdates();
@@ -57,7 +57,7 @@ function startStatusBarUpdates(): void {
     debugLog(`Starting status bar updates with interval ${interval}ms`);
 
     updateInterval = setInterval(() => {
-        updateStatusBar();
+        void updateStatusBar();
     }, interval);
 }
 
@@ -124,5 +124,5 @@ export function cleanupStatusBar(): void {
  * Force an immediate status bar update
  */
 export function forceStatusBarUpdate(): void {
-    updateStatusBar();
+    void updateStatusBar();
 }

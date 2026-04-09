@@ -137,6 +137,7 @@ async function checkAutoKillConditions(): Promise<void> {
             // Max extra servers: kill oldest servers
             if (maxExtraServers > 0 && extraProcesses.length > maxExtraServers) {
                 const toKill = extraProcesses
+                    .filter(p => !isNaN(parseInt(p.pid, 10)) && parseInt(p.pid, 10) > 0)
                     .sort((a, b) => parseInt(a.pid, 10) - parseInt(b.pid, 10)) // Sort by PID (lower = older)
                     .slice(0, extraProcesses.length - maxExtraServers);
 

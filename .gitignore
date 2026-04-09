@@ -10,4 +10,7 @@ node_modules
 .nuxt/
 .output/
 .env
+.env.local
 dist/
+*.log
+npm-debug.log*

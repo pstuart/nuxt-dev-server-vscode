@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { STATUS_BAR, COMMANDS } from './constants';
 import { getRunningNuxtProcessCount } from './processManager';
 import { getManagedServer, isManagedServerRunning } from './devServer';
-import { debugLog, getConfig } from './utils';
+import { debugLog, getConfig, getErrorMessage } from './utils';
 
 /**
  * Status bar item instance
@@ -23,7 +23,7 @@ export function initializeStatusBar(context: vscode.ExtensionContext): vscode.St
     context.subscriptions.push(statusBarItem);
 
     // Initial update
-    void updateStatusBar();
+    void updateStatusBar().catch(err => debugLog('Status bar update failed:', getErrorMessage(err)));
 
     // Start periodic updates
     startStatusBarUpdates();
@@ -57,7 +57,7 @@ function startStatusBarUpdates(): void {
     debugLog(`Starting status bar updates with interval ${interval}ms`);
 
     updateInterval = setInterval(() => {
-        void updateStatusBar();
+        void updateStatusBar().catch(err => debugLog('Status bar update failed:', getErrorMessage(err)));
     }, interval);
 }
 
@@ -124,5 +124,5 @@ export function cleanupStatusBar(): void {
  * Force an immediate status bar update
  */
 export function forceStatusBarUpdate(): void {
-    void updateStatusBar();
+    void updateStatusBar().catch(err => debugLog('Status bar update failed:', getErrorMessage(err)));
 }

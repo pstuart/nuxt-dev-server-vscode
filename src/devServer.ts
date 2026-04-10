@@ -260,7 +260,7 @@ export async function startDevServer(): Promise<boolean> {
 
             if (!serverStarted) {
                 serverStarted = true;
-                void showInfo(`Nuxt dev server started on port ${detectedPort}`);
+                void Promise.resolve(showInfo(`Nuxt dev server started on port ${detectedPort}`)).catch(() => {});
 
                 // Open browser if configured
                 if (config.openBrowserOnStart) {
@@ -295,7 +295,7 @@ export async function startDevServer(): Promise<boolean> {
     // Handle errors
     childProcess.on('error', (error) => {
         debugLog('Server process error:', getErrorMessage(error));
-        void showError(`Failed to start server: ${getErrorMessage(error)}`);
+        void Promise.resolve(showError(`Failed to start server: ${getErrorMessage(error)}`)).catch(() => {});
         outputChannel.appendLine(`Error: ${getErrorMessage(error)}`);
 
         if (managedServer?.process === childProcess) {

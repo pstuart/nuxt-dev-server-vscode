@@ -263,7 +263,8 @@ export async function waitForProcessPort(
 
     while (Date.now() - startTime < timeoutMs) {
         try {
-            const { stdout: lsofOut } = await execAsync(`lsof -Pan -p ${pid} -iTCP -sTCP:LISTEN 2>/dev/null`);
+            const safePid = sanitizePid(String(pid));
+            const { stdout: lsofOut } = await execAsync(`lsof -Pan -p ${safePid} -iTCP -sTCP:LISTEN 2>/dev/null`);
             const portMatch = lsofOut.match(PROCESS_PATTERNS.LSOF_PORT_REGEX);
             if (portMatch) {
                 const port = parseInt(portMatch[1], 10);

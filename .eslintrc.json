@@ -12,7 +12,7 @@
   "extends": [
     "eslint:recommended",
     "plugin:@typescript-eslint/recommended",
-    "plugin:@typescript-eslint/recommended-requiring-type-checking"
+    "plugin:@typescript-eslint/recommended-type-checked"
   ],
   "rules": {
     "@typescript-eslint/naming-convention": [
@@ -22,7 +22,6 @@
         "format": ["camelCase", "PascalCase"]
       }
     ],
-    "@typescript-eslint/semi": "warn",
     "curly": "warn",
     "eqeqeq": "warn",
     "no-throw-literal": "warn",
@@ -31,7 +30,8 @@
       "warn",
       {
         "argsIgnorePattern": "^_",
-        "varsIgnorePattern": "^_"
+        "varsIgnorePattern": "^_",
+        "caughtErrors": "none"
       }
     ],
     "@typescript-eslint/explicit-function-return-type": [

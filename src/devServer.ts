@@ -63,7 +63,12 @@ async function isPackageManagerAvailable(manager: PackageManager): Promise<boole
             return false;
         }
 
-        const { stdout } = await execAsync(`which ${manager} 2>/dev/null || echo ''`);
+        // The allowlist above is the primary defense, but quoting the
+        // interpolated value keeps the shell-command boundary safe in
+        // depth — if the allowlist ever drifts (e.g. a future contributor
+        // widens it to user-typed strings), this guard prevents the
+        // mistake from becoming command injection.
+        const { stdout } = await execAsync(`which '${manager}' 2>/dev/null || echo ''`);
         const binaryPath = stdout.trim();
 
         if (binaryPath) {

@@ -2,7 +2,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import { NuxtProcess } from './types';
 import { PROCESS_PATTERNS, DEFAULT_CONFIG } from './constants';
-import { formatPathForDisplay, sanitizePid, debugLog, getErrorMessage, expandPath, sleep, showWarning } from './utils';
+import { formatPathForDisplay, sanitizePid, debugLog, getErrorMessage, expandPath, sleep, showWarning, getConfig } from './utils';
 
 const execAsync = promisify(exec);
 
@@ -154,13 +154,19 @@ export async function killProcess(pid: string): Promise<void> {
         // Try graceful kill first
         process.kill(numPid, 'SIGTERM');
 
-        // Wait a moment
-        await sleep(500);
+        // Wait for graceful shutdown — respects the user's
+        // `nuxt-dev-server.gracefulShutdownTimeout` setting (default 5000ms,
+        // bounded 1000-30000 by package.json contributes.configuration).
+        // Until this scan, the config value was read by getConfig() but no
+        // caller actually used it; the SIGTERM-to-SIGKILL gap was hardcoded
+        // to 500ms regardless of what the user set.
+        const gracefulTimeoutMs = getConfig().gracefulShutdownTimeout;
+        await sleep(gracefulTimeoutMs);
 
         // Check if still alive, force kill if needed
         try {
             process.kill(numPid, 0); // Check if process exists
-            debugLog(`Process ${numPid} still alive, sending SIGKILL`);
+            debugLog(`Process ${numPid} still alive after ${gracefulTimeoutMs}ms, sending SIGKILL`);
             process.kill(numPid, 'SIGKILL');
         } catch (error) {
             // Process already dead, good
@@ -268,8 +274,14 @@ export async function waitForProcessPort(
             const portMatch = lsofOut.match(PROCESS_PATTERNS.LSOF_PORT_REGEX);
             if (portMatch) {
                 const port = parseInt(portMatch[1], 10);
-                debugLog(`Process ${pid} is listening on port ${port}`);
-                return port;
+                // LSOF_PORT_REGEX uses \d+; bound the result to a valid TCP
+                // port range (1-65535) before treating it as the listener.
+                if (port < 1 || port > 65535) {
+                    debugLog(`Ignoring out-of-range lsof port for pid ${pid}: ${port}`);
+                } else {
+                    debugLog(`Process ${pid} is listening on port ${port}`);
+                    return port;
+                }
             }
         } catch (error) {
             // Not listening yet

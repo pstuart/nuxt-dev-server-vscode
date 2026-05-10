@@ -63,7 +63,12 @@ async function isPackageManagerAvailable(manager: PackageManager): Promise<boole
             return false;
         }
 
-        const { stdout } = await execAsync(`which ${manager} 2>/dev/null || echo ''`);
+        // The allowlist above is the primary defense, but quoting the
+        // interpolated value keeps the shell-command boundary safe in
+        // depth — if the allowlist ever drifts (e.g. a future contributor
+        // widens it to user-typed strings), this guard prevents the
+        // mistake from becoming command injection.
+        const { stdout } = await execAsync(`which '${manager}' 2>/dev/null || echo ''`);
         const binaryPath = stdout.trim();
 
         if (binaryPath) {
@@ -254,7 +259,15 @@ export async function startDevServer(): Promise<boolean> {
         // Extract port from output
         const portMatch = output.match(PROCESS_PATTERNS.PORT_REGEX);
         if (portMatch?.[1]) {
-            detectedPort = parseInt(portMatch[1], 10);
+            const parsedPort = parseInt(portMatch[1], 10);
+            // PORT_REGEX uses \d+ which captures any digit string, so a
+            // pathological Nuxt-stdout line ("http://localhost:99999") would
+            // produce an out-of-range port. Bound to 1-65535 before adopting.
+            if (parsedPort < 1 || parsedPort > 65535) {
+                debugLog(`Ignoring out-of-range port from Nuxt stdout: ${parsedPort}`);
+                return;
+            }
+            detectedPort = parsedPort;
             detectedUrl = `http://localhost:${detectedPort}`;
             debugLog(`Detected server port: ${detectedPort}`);
 

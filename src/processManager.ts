@@ -268,8 +268,14 @@ export async function waitForProcessPort(
             const portMatch = lsofOut.match(PROCESS_PATTERNS.LSOF_PORT_REGEX);
             if (portMatch) {
                 const port = parseInt(portMatch[1], 10);
-                debugLog(`Process ${pid} is listening on port ${port}`);
-                return port;
+                // LSOF_PORT_REGEX uses \d+; bound the result to a valid TCP
+                // port range (1-65535) before treating it as the listener.
+                if (port < 1 || port > 65535) {
+                    debugLog(`Ignoring out-of-range lsof port for pid ${pid}: ${port}`);
+                } else {
+                    debugLog(`Process ${pid} is listening on port ${port}`);
+                    return port;
+                }
             }
         } catch (error) {
             // Not listening yet

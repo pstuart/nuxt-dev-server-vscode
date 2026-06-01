@@ -69,6 +69,11 @@ export function sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function clampConfigNumber(value: number, min: number, max: number, fallback: number): number {
+    if (!Number.isFinite(value)) { return fallback; }
+    return Math.min(max, Math.max(min, value));
+}
+
 /**
  * Get extension configuration with defaults
  */
@@ -76,19 +81,19 @@ export function getConfig(): ExtensionConfig {
     const config = vscode.workspace.getConfiguration(CONFIG_SECTION);
 
     return {
-        defaultPort: config.get('defaultPort', 3000),
+        defaultPort: clampConfigNumber(config.get('defaultPort', 3000), 1, 65535, 3000),
         preferredPackageManager: config.get('preferredPackageManager', 'auto'),
         autoStartOnOpen: config.get('autoStartOnOpen', false),
         showNotifications: config.get('showNotifications', true),
-        updateInterval: config.get('updateInterval', 5000),
+        updateInterval: clampConfigNumber(config.get('updateInterval', 5000), 1000, 60000, 5000),
         devCommand: config.get('devCommand', 'dev'),
         openBrowserOnStart: config.get('openBrowserOnStart', false),
         debug: config.get('debug', false),
-        autoKillTimeout: config.get('autoKillTimeout', 0),
-        autoKillIdleTime: config.get('autoKillIdleTime', 0),
+        autoKillTimeout: clampConfigNumber(config.get('autoKillTimeout', 0), 0, Number.POSITIVE_INFINITY, 0),
+        autoKillIdleTime: clampConfigNumber(config.get('autoKillIdleTime', 0), 0, Number.POSITIVE_INFINITY, 0),
         enableAutoCleanup: config.get('enableAutoCleanup', false),
-        maxExtraServers: config.get('maxExtraServers', 0),
-        gracefulShutdownTimeout: config.get('gracefulShutdownTimeout', 5000),
+        maxExtraServers: clampConfigNumber(config.get('maxExtraServers', 0), 0, Number.POSITIVE_INFINITY, 0),
+        gracefulShutdownTimeout: clampConfigNumber(config.get('gracefulShutdownTimeout', 5000), 1000, 30000, 5000),
     };
 }
 

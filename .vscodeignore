@@ -13,3 +13,6 @@ node_modules/**
 PUBLISHING.md
 CHANGELOG.md
 icon.svg
+CLAUDE.md
+thoughts/**
+eslint.config.mjs

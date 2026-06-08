@@ -90,6 +90,13 @@ async function isPackageManagerAvailable(manager: PackageManager): Promise<boole
 let managedServer: ManagedServer | null = null;
 
 /**
+ * Re-entrancy guard for startDevServer. `managedServer` is only assigned after the
+ * async pre-flight + spawn, so without this two rapid start invocations could both
+ * pass the running-check and spawn a server — orphaning the first.
+ */
+let startingServer = false;
+
+/**
  * Get the currently managed server
  */
 export function getManagedServer(): ManagedServer | null {
@@ -186,11 +193,23 @@ async function hasNuxtConfig(rootPath: string): Promise<boolean> {
  * Start the dev server
  */
 export async function startDevServer(): Promise<boolean> {
-    if (isManagedServerRunning()) {
+    if (isManagedServerRunning() || startingServer) {
         await showWarning('Dev server is already running');
         return false;
     }
 
+    // Hold the guard across the async pre-flight + spawn (managedServer isn't set
+    // until the end). `finally` clears it even if pre-flight throws, so a transient
+    // failure can't permanently block future starts.
+    startingServer = true;
+    try {
+        return await startDevServerInternal();
+    } finally {
+        startingServer = false;
+    }
+}
+
+async function startDevServerInternal(): Promise<boolean> {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
         await showError('No workspace folder open');

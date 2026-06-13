@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { STATUS_BAR, COMMANDS } from './constants';
+import { STATUS_BAR, COMMANDS, CONFIG_SECTION } from './constants';
 import { getRunningNuxtProcessCount } from './processManager';
 import { getManagedServer, isManagedServerRunning } from './devServer';
 import { debugLog, getConfig, getErrorMessage } from './utils';
@@ -36,6 +36,19 @@ export function initializeStatusBar(context: vscode.ExtensionContext): vscode.St
                 startStatusBarUpdates();
             } else {
                 stopStatusBarUpdates();
+            }
+        })
+    );
+
+    // Apply updateInterval changes live. The timer caches the interval at creation,
+    // so unlike the other settings (read per-use via getConfig) it would otherwise
+    // require a reload to take effect.
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration(`${CONFIG_SECTION}.updateInterval`)) {
+                debugLog('updateInterval changed; restarting status bar timer');
+                stopStatusBarUpdates();
+                startStatusBarUpdates();
             }
         })
     );

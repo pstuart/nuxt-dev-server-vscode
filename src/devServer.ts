@@ -365,12 +365,22 @@ async function startDevServerInternal(): Promise<boolean> {
         onServerStart();
 
         return true;
+    } else if (childProcess.exitCode !== null || childProcess.signalCode !== null) {
+        // The process exited before it ever listened (e.g. no `dev` script, a
+        // bad nuxt.config, an immediate crash). waitForProcessPort collapses
+        // "died" and "slow start" into null; only the dead case is a failure —
+        // surface it instead of silently reporting success.
+        debugLog('Server process exited before listening');
+        await showError(
+            'Nuxt dev server exited before it started listening — see the "Nuxt Dev Server" output for details.'
+        );
+        return false;
     } else {
         debugLog('Server did not start listening within timeout period');
-        // Notify auto-kill module anyway (process was started)
+        // Process is still alive — it may just be a slow start. Notify auto-kill
+        // (the process was started) and leave it running.
         onServerStart();
-        // Don't show error - it might still be starting, just slower
-        return true; // Still return true as process was started
+        return true;
     }
 }
 

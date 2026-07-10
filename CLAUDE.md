@@ -88,10 +88,12 @@ Uses a two-pronged approach to ensure complete cleanup:
 1. **Working directory matching**: Find all Nuxt processes in the same working directory and kill them
 2. **Process tree cleanup**: Kill all child processes (`pkill -9 -P $pid`) then the parent shell
 
+Individual process kills are graceful: SIGTERM first, then SIGKILL after `gracefulShutdownTimeout` (default 5000ms) if the process is still alive (src/processManager.ts).
+
 This dual approach handles cases where the spawned shell has child processes.
 
 ### Status Bar Updates
-The status bar updates every 3 seconds (src/statusBar.ts) and shows:
+The status bar updates every 5 seconds by default (src/statusBar.ts, configurable via the `updateInterval` setting; changes apply live without reload) and shows:
 - `⚡ Nuxt Dev (n)` - Your managed server is running (n = total instances)
 - `⚡ Nuxt (n)` - Other instances detected, no managed server
 - `⊘ Nuxt Dev` - No servers running
@@ -103,10 +105,10 @@ The extension provides three version views:
 - **Running**: Per-instance version by reading `node_modules/nuxt/package.json` in each process's working directory
 
 ### Package Manager Detection
-Auto-detects package manager by checking for lock files in this order:
+The `preferredPackageManager` setting takes precedence when not `auto`. Otherwise, auto-detects by checking for lock files in this order:
 1. `yarn.lock` → use `yarn`
 2. `pnpm-lock.yaml` → use `pnpm`
-3. `bun.lockb` → use `bun`
+3. `bun.lockb` or `bun.lock` → use `bun`
 4. Default → use `npm`
 
 ## Key Implementation Details

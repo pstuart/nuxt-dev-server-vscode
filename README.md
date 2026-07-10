@@ -1,6 +1,5 @@
 # Nuxt Dev Server Manager
 
-[![CI](https://github.com/pstuart/nuxt-dev-server-vscode/actions/workflows/ci.yml/badge.svg)](https://github.com/pstuart/nuxt-dev-server-vscode/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/visual-studio-marketplace/v/pstuart.nuxt-dev-server)](https://marketplace.visualstudio.com/items?itemName=pstuart.nuxt-dev-server)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
@@ -46,6 +45,14 @@ All commands are available via the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+
 - **Nuxt: Kill All Running Instances** - Kill all Nuxt processes on the system
 - **Nuxt: Open in Browser** - Open the dev server URL in your browser
 - **Nuxt: Show Version** - Display detailed Nuxt version information (declared, installed, and running)
+- **Nuxt: Show Quick Menu** - Quick pick menu with all commands (also triggered by clicking the status bar item)
+
+### Keyboard Shortcuts
+
+- `Cmd+Alt+N S` (`Ctrl+Alt+N S` on Windows/Linux) - Start Dev Server
+- `Cmd+Alt+N X` - Stop Dev Server
+- `Cmd+Alt+N R` - Restart Dev Server
+- `Cmd+Alt+N O` - Open in Browser
 
 ### Show All Running Instances
 
@@ -119,7 +126,7 @@ This extension contributes the following settings (access via `Preferences: Open
 
 ### UI and Display
 
-- **`nuxt-dev-server.statusBarUpdateInterval`** (default: `3000`)
+- **`nuxt-dev-server.updateInterval`** (default: `5000`)
   - Status bar update interval in milliseconds
   - Min: 1000ms, Max: 60000ms
   - Lower values = more frequent updates but slightly higher CPU usage
@@ -130,9 +137,22 @@ This extension contributes the following settings (access via `Preferences: Open
 
 ### Advanced
 
-- **`nuxt-dev-server.customDevCommand`** (default: `""`)
-  - Custom dev server command (leave empty for auto-detection)
-  - Example: `"npm run dev:custom"` or `"pnpm dev --host"`
+- **`nuxt-dev-server.preferredPackageManager`** (default: `"auto"`)
+  - Package manager to use: `auto`, `npm`, `yarn`, `pnpm`, or `bun`
+  - `auto` detects from lock files (yarn.lock, pnpm-lock.yaml, bun.lockb/bun.lock)
+
+- **`nuxt-dev-server.devCommand`** (default: `"dev"`)
+  - Package.json script name to run (e.g., `"dev"` or `"dev:custom"`)
+  - Only alphanumeric characters, dashes, underscores, and colons are allowed
+
+- **`nuxt-dev-server.autoStartOnOpen`** (default: `false`)
+  - Automatically start the dev server when the workspace opens
+
+- **`nuxt-dev-server.openBrowserOnStart`** (default: `false`)
+  - Open the browser automatically when the server starts
+
+- **`nuxt-dev-server.debug`** (default: `false`)
+  - Enable debug logging to the output channel
 
 - **`nuxt-dev-server.defaultPort`** (default: `3000`)
   - Default port to use if port cannot be detected from output
@@ -169,8 +189,8 @@ For specialized setups:
 
 ```json
 {
-  "nuxt-dev-server.customDevCommand": "npm run dev:custom",
-  "nuxt-dev-server.statusBarUpdateInterval": 2000,
+  "nuxt-dev-server.devCommand": "dev:custom",
+  "nuxt-dev-server.updateInterval": 2000,
   "nuxt-dev-server.gracefulShutdownTimeout": 10000
 }
 ```
@@ -193,7 +213,7 @@ For specialized setups:
 ### From VSIX File
 
 ```bash
-code --install-extension nuxt-dev-server-0.0.2.vsix
+code --install-extension nuxt-dev-server-0.0.8.vsix
 ```
 
 ## Development

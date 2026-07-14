@@ -16,3 +16,5 @@ icon.svg
 CLAUDE.md
 thoughts/**
 eslint.config.mjs
+bun.lock
+package-lock.json

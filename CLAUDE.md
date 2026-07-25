@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 This is a VS Code extension that manages Nuxt development servers with status bar integration. It provides start/stop/restart functionality, multi-instance tracking, and process management for Nuxt dev servers.
 
-**Platform**: Currently macOS-only (uses `ps`, `lsof`, `pkill` commands)
+**Platform**: Cross-platform (macOS, Linux, Windows; uses platform-specific commands via abstraction layer)
 
 ## Development Commands
 
@@ -55,6 +55,7 @@ The extension is organized into focused modules under `src/`:
 | `statusBar.ts` | VS Code status bar initialization and updates |
 | `versionDetector.ts` | Read declared/installed/running Nuxt versions |
 | `autoKill.ts` | Auto-kill by timeout or idle time logic |
+| `platform.ts` | Cross-platform abstraction for process discovery, port detection, working directory, and process tree killing |
 | `types.ts` | Shared TypeScript type definitions |
 | `constants.ts` | Shared constants (intervals, commands, etc.) |
 | `utils.ts` | Shared utility functions |
@@ -64,12 +65,12 @@ The extension maintains three critical pieces of global state:
 - `devServerProcess`: The managed ChildProcess for the user's dev server
 - `devServerWorkingDir`: Working directory of the managed server (used for cleanup)
 - `statusBarItem`: The VS Code status bar item showing server status
-
 ### Process Detection Strategy
+
 The extension uses a **port-based detection** approach to accurately count running Nuxt instances:
 
-1. **Discovery**: Find node processes with "nuxt" and "dev" or "preview" via `ps`
-2. **Verification**: For each process, check if it's listening on a port using `lsof -iTCP -sTCP:LISTEN`
+1. **Discovery**: Find node processes with "nuxt" and "dev" or "preview" via platform-specific commands (`ps` on macOS/Linux, PowerShell on Windows)
+2. **Verification**: For each process, check if it's listening on a port using platform-specific commands (`lsof` on macOS/Linux, `Get-NetTCPConnection` on Windows)
 3. **Filtering**: Only count processes with listening ports (actual servers, not build scripts)
 4. **Deduplication**: Use a Map keyed by PID to avoid counting duplicate/child processes
 
@@ -86,7 +87,7 @@ This approach prevents false positives from counting build processes or child pr
 **Stopping a server** (src/devServer.ts):
 Uses a two-pronged approach to ensure complete cleanup:
 1. **Working directory matching**: Find all Nuxt processes in the same working directory and kill them
-2. **Process tree cleanup**: Kill all child processes (`pkill -9 -P $pid`) then the parent shell
+2. **Process tree cleanup**: Kill all child processes (platform-specific) then the parent shell
 
 Individual process kills are graceful: SIGTERM first, then SIGKILL after `gracefulShutdownTimeout` (default 5000ms) if the process is still alive (src/processManager.ts).
 
@@ -111,6 +112,8 @@ The `preferredPackageManager` setting takes precedence when not `auto`. Otherwis
 3. `bun.lockb` or `bun.lock` → use `bun`
 4. Default → use `npm`
 
+Binary availability is checked using a cross-platform approach (`which` on macOS/Linux, `where` on Windows).
+
 ## Key Implementation Details
 
 ### Port Extraction
@@ -128,7 +131,7 @@ When the extension deactivates (src/extension.ts), it attempts to clean up by:
 ### Multi-Instance Commands
 - **Show All**: Displays all running Nuxt instances with PID, port, directory, and command
 - **List and Kill**: Interactive multi-select to kill specific instances
-- **Kill All**: Uses `pkill -f "node.*nuxt.*(dev|preview)"` to kill all Nuxt processes
+- **Kill All**: Kills all detected Nuxt processes (platform-specific kill command)
 
 ## Extension Configuration
 

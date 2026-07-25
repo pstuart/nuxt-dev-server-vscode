@@ -1,10 +1,12 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import { NuxtProcess } from './types';
-import { PROCESS_PATTERNS, DEFAULT_CONFIG } from './constants';
+import { DEFAULT_CONFIG } from './constants';
 import { formatPathForDisplay, sanitizePid, debugLog, getErrorMessage, expandPath, sleep, showWarning, getConfig } from './utils';
-
-const execAsync = promisify(exec);
+import {
+    listNuxtProcesses,
+    getProcessPort,
+    getProcessWorkingDir,
+    killChildProcesses
+} from './platform';
 
 /**
  * Track process detection failures
@@ -24,40 +26,19 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
         debugLog('Detecting running Nuxt processes...');
 
         // Find all node processes that contain "nuxt" and "dev" or "preview"
-        const psCommand = `ps -eo pid,command | grep -iE "${PROCESS_PATTERNS.NUXT_DEV_PREVIEW}" | grep -v grep`;
+        const entries = await listNuxtProcesses();
 
-        let psOut: string;
-        try {
-            const result = await execAsync(psCommand);
-            psOut = result.stdout;
-        } catch (error: unknown) {
-            // grep returns exit code 1 when no matches found - this is normal
-            const execError = error as { code?: number };
-            if (execError.code === 1) {
-                debugLog('No Nuxt processes found (grep returned no matches)');
-                consecutiveFailures = 0; // Reset failure counter - this is expected
-                return [];
-            }
-            throw error; // Re-throw if it's a real error
-        }
-
-        if (!psOut.trim()) {
-            debugLog('No Nuxt processes found (empty output)');
+        if (entries.length === 0) {
+            debugLog('No Nuxt processes found');
             consecutiveFailures = 0; // Reset failure counter - this is expected
             return [];
         }
 
-        const lines = psOut.trim().split('\n');
         const processMap = new Map<string, NuxtProcess>();
 
-        for (const line of lines) {
-            const match = line.trim().match(/^(\d+)\s+(.+)$/);
-            if (!match) {
-                continue;
-            }
-
-            const pid = match[1];
-            const fullCommand = match[2];
+        for (const entry of entries) {
+            const pid = entry.pid;
+            const fullCommand = entry.command;
 
             // Skip if already processed
             if (processMap.has(pid)) {
@@ -68,11 +49,7 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
             let port: string | undefined;
             try {
                 const sanitizedPid = sanitizePid(pid);
-                const { stdout: lsofOut } = await execAsync(`lsof -Pan -p ${sanitizedPid} -iTCP -sTCP:LISTEN 2>/dev/null`);
-                const portMatch = lsofOut.match(PROCESS_PATTERNS.LSOF_PORT_REGEX);
-                if (portMatch) {
-                    port = portMatch[1];
-                }
+                port = await getProcessPort(sanitizedPid);
             } catch (error) {
                 // Not listening on any port, skip this process
                 debugLog(`Process ${pid} not listening on any port, skipping`);
@@ -88,8 +65,7 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
             let workingDir = 'Unknown';
             try {
                 const sanitizedPid = sanitizePid(pid);
-                const { stdout: cwdOut } = await execAsync(`lsof -p ${sanitizedPid} 2>/dev/null | grep cwd | awk '{print $NF}'`);
-                workingDir = cwdOut.trim() || 'Unknown';
+                workingDir = await getProcessWorkingDir(sanitizedPid);
             } catch (error) {
                 debugLog(`Could not get working directory for ${pid}`);
             }
@@ -125,7 +101,7 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
             const platform = process.platform;
             void showWarning(
                 `Process detection failing (${consecutiveFailures} consecutive failures). ` +
-                `This may be due to missing system tools (ps, lsof) or permissions. ` +
+                `This may be due to missing system tools or permissions. ` +
                 `Platform: ${platform}. Check the debug output for details.`
             );
         }
@@ -185,14 +161,8 @@ export async function killProcessTree(parentPid: string): Promise<void> {
     const numPid = sanitizePid(parentPid);
     debugLog(`Killing process tree for ${numPid}`);
 
-    try {
-        // Kill all descendants recursively using pkill
-        const sanitizedPid = sanitizePid(String(numPid));
-        await execAsync(`pkill -9 -P ${sanitizedPid}`);
-    } catch (error) {
-        // No child processes found, that's fine
-        debugLog(`No child processes found for ${numPid}`);
-    }
+    // Kill all descendants recursively using platform abstraction
+    await killChildProcesses(numPid);
 
     // Kill the parent
     await killProcess(parentPid);
@@ -270,17 +240,16 @@ export async function waitForProcessPort(
     while (Date.now() - startTime < timeoutMs) {
         try {
             const safePid = sanitizePid(String(pid));
-            const { stdout: lsofOut } = await execAsync(`lsof -Pan -p ${safePid} -iTCP -sTCP:LISTEN 2>/dev/null`);
-            const portMatch = lsofOut.match(PROCESS_PATTERNS.LSOF_PORT_REGEX);
-            if (portMatch) {
-                const port = parseInt(portMatch[1], 10);
-                // LSOF_PORT_REGEX uses \d+; bound the result to a valid TCP
-                // port range (1-65535) before treating it as the listener.
-                if (port < 1 || port > 65535) {
-                    debugLog(`Ignoring out-of-range lsof port for pid ${pid}: ${port}`);
+            const port = await getProcessPort(safePid);
+            if (port) {
+                const parsedPort = parseInt(port, 10);
+                // Port from lsof/netstat should be a valid number; bound to
+                // valid TCP port range (1-65535) before treating as listener.
+                if (parsedPort < 1 || parsedPort > 65535) {
+                    debugLog(`Ignoring out-of-range port for pid ${pid}: ${parsedPort}`);
                 } else {
-                    debugLog(`Process ${pid} is listening on port ${port}`);
-                    return port;
+                    debugLog(`Process ${pid} is listening on port ${parsedPort}`);
+                    return parsedPort;
                 }
             }
         } catch (error) {

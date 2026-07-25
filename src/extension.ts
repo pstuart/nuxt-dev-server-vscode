@@ -19,14 +19,6 @@ import { initializeAutoKill, cleanupAutoKill } from './autoKill';
 export function activate(context: vscode.ExtensionContext): void {
     debugLog('Nuxt Dev Server Manager activated');
 
-    // Check platform compatibility
-    const platform = process.platform;
-    if (platform !== 'darwin' && platform !== 'linux') {
-        void vscode.window.showWarningMessage(
-            `Nuxt Dev Server Manager: Limited support on ${platform}. This extension is optimized for macOS and Linux. Windows support is experimental.`
-        );
-    }
-
     // Initialize status bar
     const statusBar = initializeStatusBar(context);
     context.subscriptions.push(statusBar);

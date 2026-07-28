@@ -65,10 +65,10 @@ View detailed information about all running Nuxt servers:
 
 ### List and Kill Instances
 
-The extension can detect all running Nuxt dev and preview servers on your Mac:
-- Shows PID, port, and working directory for each instance
-- Multi-select to kill specific instances
-- Useful when you have multiple projects running
+The extension can detect all running Nuxt dev and preview servers:
+|- Shows PID, port, and working directory for each instance
+|- Multi-select to kill specific instances
+|- Useful when you have multiple projects running
 
 ### Accurate Process Counting
 
@@ -88,7 +88,7 @@ This helps identify version mismatches and ensures you know exactly which Nuxt v
 
 ## Requirements
 
-- macOS (currently Mac-only)
+- macOS, Linux, or Windows
 - Nuxt project with `nuxt.config.{js,ts,mjs,mts}`
 - Node.js and npm/yarn/pnpm/bun
 
@@ -197,9 +197,10 @@ For specialized setups:
 
 ## Known Issues
 
-- Currently only supports macOS (uses `ps`, `lsof`, `pkill`)
 - Port detection may not work for all configurations
-- Working directory detection requires `lsof` permission
+- Working directory detection may require additional permissions on some platforms
+- On Windows, working directory detection for processes owned by other users may return "Unknown"
+- Process detection relies on system tools (ps/lsof on macOS/Linux, PowerShell on Windows)
 
 ## Installation
 

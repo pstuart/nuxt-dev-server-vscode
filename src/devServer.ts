@@ -1,6 +1,5 @@
 import * as vscode from 'vscode';
-import { spawn, exec } from 'child_process';
-import { promisify } from 'util';
+import { spawn } from 'child_process';
 import * as path from 'path';
 import { ManagedServer, PackageManager } from './types';
 import { LOCK_FILES, NUXT_CONFIG_FILES, OUTPUT_CHANNELS, DEFAULT_CONFIG, PROCESS_PATTERNS } from './constants';
@@ -23,8 +22,7 @@ import {
 } from './processManager';
 import { onServerStart, onServerStop } from './autoKill';
 import { forceStatusBarUpdate } from './statusBar';
-
-const execAsync = promisify(exec);
+import { isBinaryAvailable } from './platform';
 
 /**
  * Whitelist of allowed package managers
@@ -57,22 +55,16 @@ function isValidPackageManager(manager: string): manager is PackageManager {
  */
 async function isPackageManagerAvailable(manager: PackageManager): Promise<boolean> {
     try {
-        // Use which command to check if binary exists
-        // Sanitize input even though it's from whitelist
+        // Validate against the allowlist first
         if (!isValidPackageManager(manager)) {
             return false;
         }
 
-        // The allowlist above is the primary defense, but quoting the
-        // interpolated value keeps the shell-command boundary safe in
-        // depth — if the allowlist ever drifts (e.g. a future contributor
-        // widens it to user-typed strings), this guard prevents the
-        // mistake from becoming command injection.
-        const { stdout } = await execAsync(`which '${manager}' 2>/dev/null || echo ''`);
-        const binaryPath = stdout.trim();
+        // Use cross-platform binary detection (which on Unix, where on Windows)
+        const isAvailable = await isBinaryAvailable(manager);
 
-        if (binaryPath) {
-            debugLog(`Package manager '${manager}' found at: ${binaryPath}`);
+        if (isAvailable) {
+            debugLog(`Package manager '${manager}' found in PATH`);
             return true;
         }
 

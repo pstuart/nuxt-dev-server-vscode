@@ -1,153 +1,139 @@
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { PROCESS_PATTERNS } from './constants';
 import { sanitizePid, debugLog, getErrorMessage } from './utils';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 /**
  * Platform-specific process management operations.
  *
- * This module abstracts the macOS/Linux-only shell commands (`ps`, `lsof`,
- * `pkill`) behind a single interface so the extension works on Windows as
- * well. On Windows, PowerShell equivalents are used.
+ * Abstracts macOS/Linux and Windows process discovery/kill behind one interface.
+ * Prefer execFile + argv (never shell string interpolation) to avoid cmd/PowerShell injection.
  */
 
-/**
- * Raw process entry returned by the platform process-lister.
- * The PID is always a string so callers can validate it with sanitizePid.
- */
 export interface ProcessEntry {
     pid: string;
     command: string;
 }
 
-/**
- * Escape a string so it can be safely used inside a PowerShell single-quoted
- * string literal.  Doubles any single quotes (the PowerShell escape).
- */
-function psEscape(value: string): string {
-    return value.replace(/'/g, "''");
+const BINARY_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
+/** Run PowerShell with a single -Command argv (no cmd.exe reparse of the script). */
+async function runPowerShell(script: string): Promise<string> {
+    const { stdout } = await execFileAsync(
+        'powershell.exe',
+        ['-NoProfile', '-NonInteractive', '-Command', script],
+        { windowsHide: true, maxBuffer: 10 * 1024 * 1024, encoding: 'utf8' }
+    );
+    return stdout;
+}
+
+/** JS filter mirroring PROCESS_PATTERNS.NUXT_DEV_PREVIEW (case-insensitive). */
+function matchesNuxtDevPreview(command: string): boolean {
+    return /node.*nuxt.*(dev|preview)/i.test(command);
 }
 
 /**
- * Build the command (and shell option) to list node processes whose command
- * line matches the Nuxt dev/preview pattern.
- *
- * Returns an object with:
- * - `command`: the shell command to execute
- * - `shell`: whether to run through a shell (always true for these commands)
- *
- * On macOS/Linux: uses `ps -eo pid,command | grep -iE ...`
- * On Windows: uses PowerShell to enumerate processes.
- */
-function buildProcessListCommand(): { command: string; windowsHide: boolean } {
-    if (process.platform === 'win32') {
-        // PowerShell: list all processes, filter for node + nuxt + dev/preview.
-        // We use a regex that mirrors PROCESS_PATTERNS.NUXT_DEV_PREVIEW.
-        const regex = psEscape(PROCESS_PATTERNS.NUXT_DEV_PREVIEW);
-        return {
-            command: `powershell -NoProfile -Command "Get-Process -Name node | Where-Object { $_.Path -match 'node' -and $_.CommandLine -match '${regex}' } | ForEach-Object { $_.Id; $_.CommandLine }"`,
-            windowsHide: true,
-        };
-    }
-    // macOS / Linux
-    return {
-        command: `ps -eo pid,command | grep -iE "${PROCESS_PATTERNS.NUXT_DEV_PREVIEW}" | grep -v grep`,
-        windowsHide: false,
-    };
-}
-
-/**
- * List all node processes whose command line matches the Nuxt dev/preview
- * pattern.  Returns an array of { pid, command } entries.
- *
- * On macOS/Linux, `ps` + `grep` is used.  On Windows, PowerShell is used.
- * grep returns exit code 1 when no matches are found — that is treated as
- * "no processes" rather than an error.
+ * List node processes whose command line matches the Nuxt dev/preview pattern.
  */
 export async function listNuxtProcesses(): Promise<ProcessEntry[]> {
-    const { command } = buildProcessListCommand();
+    if (process.platform === 'win32') {
+        // Win32_Process exposes CommandLine; Get-Process does not.
+        // Emit one JSON object per line for robust parsing.
+        const script = [
+            "$ErrorActionPreference = 'SilentlyContinue'",
+            "Get-CimInstance Win32_Process |",
+            "  Where-Object { $_.Name -match 'node' -and $_.CommandLine -and ($_.CommandLine -match 'nuxt') -and ($_.CommandLine -match 'dev|preview') } |",
+            "  ForEach-Object { (@{ pid = $_.ProcessId; command = $_.CommandLine } | ConvertTo-Json -Compress) }",
+        ].join(' ');
 
-    let output: string;
-    try {
-        const result = await execAsync(command);
-        output = result.stdout;
-    } catch (error: unknown) {
-        const execError = error as { code?: number };
-        // grep returns exit code 1 when no matches found - this is normal
-        if (execError.code === 1) {
-            debugLog('No Nuxt processes found (process list returned no matches)');
-            return [];
-        }
-        throw error;
-    }
-
-    if (!output.trim()) {
-        debugLog('No Nuxt processes found (empty output)');
-        return [];
-    }
-
-    const entries: ProcessEntry[] = [];
-    const lines = output.trim().split('\n');
-
-    for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) {
-            continue;
-        }
-
-        if (process.platform === 'win32') {
-            // PowerShell output: alternating pid and command lines
-            // Each process is represented as two lines: Id, then CommandLine
-            const pid = trimmed;
-            // The next line should be the command
-            const idx = lines.indexOf(line);
-            if (idx >= 0 && idx + 1 < lines.length) {
-                const cmdLine = lines[idx + 1].trim();
-                if (cmdLine) {
-                    entries.push({ pid, command: cmdLine });
+        try {
+            const stdout = await runPowerShell(script);
+            if (!stdout.trim()) {
+                debugLog('No Nuxt processes found (Windows empty output)');
+                return [];
+            }
+            const entries: ProcessEntry[] = [];
+            for (const line of stdout.split(/\r?\n/)) {
+                const trimmed = line.trim();
+                if (!trimmed?.startsWith('{')) {
+                    continue;
+                }
+                try {
+                    const obj = JSON.parse(trimmed) as { pid?: number | string; command?: string };
+                    if (obj.pid !== undefined && obj.pid !== null && obj.command) {
+                        entries.push({ pid: String(obj.pid), command: String(obj.command) });
+                    }
+                } catch {
+                    // skip malformed line
                 }
             }
-        } else {
-            // Unix: "pid command..."
-            const match = trimmed.match(/^(\d+)\s+(.+)$/);
-            if (match) {
-                entries.push({ pid: match[1], command: match[2] });
-            }
+            return entries;
+        } catch (error) {
+            debugLog('Windows process list failed:', getErrorMessage(error));
+            return [];
         }
     }
 
-    return entries;
+    // macOS / Linux: parse `ps` in JS (no shell pipeline)
+    try {
+        const { stdout } = await execFileAsync('ps', ['-eo', 'pid,command'], {
+            maxBuffer: 10 * 1024 * 1024,
+            encoding: 'utf8',
+        });
+        const entries: ProcessEntry[] = [];
+        for (const line of stdout.split('\n')) {
+            const trimmed = line.trim();
+            if (!trimmed) {
+                continue;
+            }
+            const match = trimmed.match(/^(\d+)\s+(.+)$/);
+            if (!match) {
+                continue;
+            }
+            const pid = match[1];
+            const command = match[2];
+            if (matchesNuxtDevPreview(command) && !/\bgrep\b/.test(command)) {
+                entries.push({ pid, command });
+            }
+        }
+        if (entries.length === 0) {
+            debugLog('No Nuxt processes found (ps filter empty)');
+        }
+        return entries;
+    } catch (error) {
+        debugLog('Unix process list failed:', getErrorMessage(error));
+        throw error;
+    }
 }
 
 /**
  * Check if a process with the given PID is listening on any TCP port.
- * Returns the port number as a string, or undefined if not listening.
- *
- * On macOS/Linux: uses `lsof -Pan -p <pid> -iTCP -sTCP:LISTEN`
- * On Windows: uses PowerShell `Get-NetTCPConnection`
  */
 export async function getProcessPort(pid: number): Promise<string | undefined> {
+    const safePid = sanitizePid(String(pid));
+
     if (process.platform === 'win32') {
-        const safePid = sanitizePid(String(pid));
+        const script =
+            `Get-NetTCPConnection -OwningProcess ${safePid} -State Listen -ErrorAction SilentlyContinue | ` +
+            `Select-Object -ExpandProperty LocalPort -First 1`;
         try {
-            const psCommand = `powershell -NoProfile -Command "Get-NetTCPConnection -OwningProcess ${safePid} -State Listen | Select-Object -ExpandProperty LocalPort | ForEach-Object { $_ }"`;
-            const { stdout } = await execAsync(psCommand);
-            const ports = stdout.trim().split('\n').filter(p => p.trim());
-            if (ports.length > 0) {
-                return ports[0].trim();
-            }
+            const stdout = await runPowerShell(script);
+            const port = stdout.trim().split(/\r?\n/).map(p => p.trim()).find(Boolean);
+            return port ?? undefined;
         } catch (error) {
             debugLog(`Could not get port for pid ${pid} on Windows:`, getErrorMessage(error));
+            return undefined;
         }
-        return undefined;
     }
 
-    // macOS / Linux
-    const safePid = sanitizePid(String(pid));
     try {
-        const { stdout } = await execAsync(`lsof -Pan -p ${safePid} -iTCP -sTCP:LISTEN 2>/dev/null`);
+        const { stdout } = await execFileAsync(
+            'lsof',
+            ['-Pan', '-p', String(safePid), '-iTCP', '-sTCP:LISTEN'],
+            { encoding: 'utf8', maxBuffer: 1024 * 1024 }
+        );
         const portMatch = stdout.match(PROCESS_PATTERNS.LSOF_PORT_REGEX);
         if (portMatch) {
             return portMatch[1];
@@ -160,21 +146,19 @@ export async function getProcessPort(pid: number): Promise<string | undefined> {
 
 /**
  * Get the working directory of a process by PID.
- * Returns the directory path, or 'Unknown' if it cannot be determined.
- *
- * On macOS/Linux: uses `lsof -p <pid> | grep cwd | awk '{print $NF}'`
- * On Windows: uses PowerShell `Get-Process -Id <pid> | Select-Object -ExpandProperty WorkingDirectory`
- * (Note: WorkingDirectory may not be available for all processes on Windows
- * without elevated privileges; in that case 'Unknown' is returned.)
  */
 export async function getProcessWorkingDir(pid: number): Promise<string> {
+    const safePid = sanitizePid(String(pid));
+
     if (process.platform === 'win32') {
-        const safePid = sanitizePid(String(pid));
+        // WorkingDirectory is not reliably on Get-Process; try ExecutablePath dirname as fallback.
+        const script =
+            `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${safePid}" -ErrorAction SilentlyContinue; ` +
+            `if ($p -and $p.ExecutablePath) { Split-Path -Parent $p.ExecutablePath }`;
         try {
-            const psCommand = `powershell -NoProfile -Command "Get-Process -Id ${safePid} | Select-Object -ExpandProperty WorkingDirectory"`;
-            const { stdout } = await execAsync(psCommand);
+            const stdout = await runPowerShell(script);
             const cwd = stdout.trim();
-            if (cwd && cwd !== '') {
+            if (cwd) {
                 return cwd;
             }
         } catch (error) {
@@ -183,12 +167,18 @@ export async function getProcessWorkingDir(pid: number): Promise<string> {
         return 'Unknown';
     }
 
-    // macOS / Linux
-    const safePid = sanitizePid(String(pid));
     try {
-        const { stdout } = await execAsync(`lsof -p ${safePid} 2>/dev/null | grep cwd | awk '{print $NF}'`);
-        const cwd = stdout.trim();
-        return cwd || 'Unknown';
+        const { stdout } = await execFileAsync('lsof', ['-a', '-p', String(safePid), '-d', 'cwd', '-Fn'], {
+            encoding: 'utf8',
+            maxBuffer: 1024 * 1024,
+        });
+        // -Fn emits "n/path" lines for the cwd name
+        for (const line of stdout.split('\n')) {
+            if (line.startsWith('n') && line.length > 1) {
+                return line.slice(1);
+            }
+        }
+        return 'Unknown';
     } catch {
         return 'Unknown';
     }
@@ -196,53 +186,52 @@ export async function getProcessWorkingDir(pid: number): Promise<string> {
 
 /**
  * Kill all child processes of a parent PID.
- *
- * On macOS/Linux: uses `pkill -9 -P <pid>`
- * On Windows: uses PowerShell to find and kill child processes via
- * Get-WmiObject / CIM to find processes with the parent PID.
  */
 export async function killChildProcesses(parentPid: number): Promise<void> {
+    const safePid = sanitizePid(String(parentPid));
+
     if (process.platform === 'win32') {
-        const safePid = sanitizePid(String(parentPid));
+        const script =
+            `Get-CimInstance Win32_Process -Filter "ParentProcessId = ${safePid}" -ErrorAction SilentlyContinue | ` +
+            `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
         try {
-            const psCommand = `powershell -NoProfile -Command "Get-WmiObject -Query 'SELECT * FROM Win32_Process WHERE ParentProcessId = ${safePid}' | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }"`;
-            await execAsync(psCommand);
+            await runPowerShell(script);
         } catch (error) {
-            // No child processes found, that's fine
             debugLog(`No child processes found for ${parentPid} on Windows:`, getErrorMessage(error));
         }
         return;
     }
 
-    // macOS / Linux
-    const safePid = sanitizePid(String(parentPid));
     try {
-        await execAsync(`pkill -9 -P ${safePid}`);
+        await execFileAsync('pkill', ['-9', '-P', String(safePid)], { encoding: 'utf8' });
     } catch (error) {
-        // No child processes found, that's fine
         debugLog(`No child processes found for ${parentPid}:`, getErrorMessage(error));
     }
 }
 
 /**
- * Check if a binary (e.g. a package manager) is available on the system PATH.
- *
- * On macOS/Linux: uses `which <binary>`
- * On Windows: uses `where <binary>`
+ * Check if a binary is available on PATH. Name must match /^[a-zA-Z0-9_-]+$/.
  */
 export async function isBinaryAvailable(binary: string): Promise<boolean> {
+    if (!BINARY_NAME_RE.test(binary)) {
+        debugLog(`Rejected invalid binary name: ${binary}`);
+        return false;
+    }
+
     if (process.platform === 'win32') {
         try {
-            const { stdout } = await execAsync(`where ${binary} 2>nul`);
+            const { stdout } = await execFileAsync('where.exe', [binary], {
+                windowsHide: true,
+                encoding: 'utf8',
+            });
             return stdout.trim() !== '';
         } catch {
             return false;
         }
     }
 
-    // macOS / Linux
     try {
-        const { stdout } = await execAsync(`which '${binary}' 2>/dev/null || echo ''`);
+        const { stdout } = await execFileAsync('which', [binary], { encoding: 'utf8' });
         return stdout.trim() !== '';
     } catch {
         return false;

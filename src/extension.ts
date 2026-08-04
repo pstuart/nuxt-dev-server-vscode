@@ -9,7 +9,7 @@ import {
     killProcess
 } from './processManager';
 import { COMMANDS, OUTPUT_CHANNELS } from './constants';
-import { getOrCreateOutputChannel, showInfo, showWarning, showError, debugLog, disposeAllOutputChannels } from './utils';
+import { getOrCreateOutputChannel, showInfo, showWarning, showError, debugLog, disposeAllOutputChannels, getConfig } from './utils';
 import { ProcessQuickPickItem } from './types';
 import { initializeAutoKill, cleanupAutoKill } from './autoKill';
 
@@ -38,6 +38,13 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand(COMMANDS.SHOW_VERSION, handleCommand(showNuxtVersion)),
         vscode.commands.registerCommand(COMMANDS.SHOW_MENU, handleCommand(showQuickPick))
     );
+
+    // Honor published autoStartOnOpen setting (default false — opt-in only).
+    // Fire-and-forget; startDevServer has its own re-entrancy guard.
+    if (getConfig().autoStartOnOpen) {
+        debugLog('autoStartOnOpen enabled — starting managed dev server');
+        void startDevServer();
+    }
 
     debugLog('Extension activation complete');
 }

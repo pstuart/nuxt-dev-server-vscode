@@ -202,6 +202,14 @@ export async function startDevServer(): Promise<boolean> {
 }
 
 async function startDevServerInternal(): Promise<boolean> {
+    // Workspace Trust: spawning package-manager scripts executes local package.json.
+    // Refuse in untrusted workspaces so untrusted folders cannot run npm/yarn/pnpm/bun.
+    if (!vscode.workspace.isTrusted) {
+        await showError('Cannot start Nuxt dev server in an untrusted workspace. Trust the folder first.');
+        debugLog('startDevServer blocked: workspace is not trusted');
+        return false;
+    }
+
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
         await showError('No workspace folder open');

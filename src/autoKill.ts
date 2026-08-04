@@ -20,6 +20,10 @@ const autoKillState: AutoKillState = {
     checkInterval: null
 };
 
+/** Rate-limit enableAutoCleanup user warnings (check interval is 30s). */
+const AUTO_CLEANUP_WARN_INTERVAL_MS = 5 * 60 * 1000;
+let lastAutoCleanupWarnAt = 0;
+
 /**
  * Update activity timestamp when files change
  */
@@ -128,10 +132,18 @@ async function checkAutoKillConditions(): Promise<void> {
         if (extraProcesses.length > 0) {
             debugLog(`Found ${extraProcesses.length} extra Nuxt server(s)`);
 
-            // Auto-cleanup: warn about extra servers
+            // Auto-cleanup: user-visible warning (rate-limited) when extras exist.
+            // Does not kill unless maxExtraServers is set.
             if (enableAutoCleanup) {
-                debugLog('Auto-cleanup enabled, showing warning about extra servers');
-                // Only warn, don't kill automatically unless maxExtraServers is set
+                const nowMs = Date.now();
+                if (nowMs - lastAutoCleanupWarnAt >= AUTO_CLEANUP_WARN_INTERVAL_MS) {
+                    lastAutoCleanupWarnAt = nowMs;
+                    await showWarning(
+                        `Found ${extraProcesses.length} extra Nuxt server(s) not managed by this extension. ` +
+                        `Use "List and Kill" or set maxExtraServers to auto-limit.`
+                    );
+                    debugLog('Auto-cleanup warning shown to user');
+                }
             }
 
             // Max extra servers: kill oldest servers

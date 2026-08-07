@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { getManagedServer, stopDevServer, isManagedServerRunning } from './devServer';
 import { getRunningNuxtProcesses, killProcess } from './processManager';
-import { debugLog, getConfig, showWarning, showInfo } from './utils';
+import { debugLog, getConfig, showWarning, showInfo, expandPath } from './utils';
 
 /**
  * Auto-kill state tracking
@@ -146,12 +146,21 @@ async function checkAutoKillConditions(): Promise<void> {
                 }
             }
 
-            // Max extra servers: kill oldest servers
+            // Max extra servers: kill oldest servers in workspace CWD only
             if (maxExtraServers > 0 && extraProcesses.length > maxExtraServers) {
-                const toKill = extraProcesses
+                // Filter extra processes to only those in the same workspace as managed server
+                const managedWorkingDir = managedServer?.workingDir;
+                const extraProcessesInWorkspace = managedWorkingDir
+                    ? extraProcesses.filter(p => {
+                          const procDir = expandPath(p.workingDir);
+                          return procDir === managedWorkingDir;
+                      })
+                    : extraProcesses;
+
+                const toKill = extraProcessesInWorkspace
                     .filter(p => !isNaN(parseInt(p.pid, 10)) && parseInt(p.pid, 10) > 0)
                     .sort((a, b) => parseInt(a.pid, 10) - parseInt(b.pid, 10)) // Sort by PID (lower = older)
-                    .slice(0, extraProcesses.length - maxExtraServers);
+                    .slice(0, extraProcessesInWorkspace.length - maxExtraServers);
 
                 debugLog(`Killing ${toKill.length} extra servers due to maxExtraServers limit`);
 

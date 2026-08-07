@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { getManagedServer, stopDevServer, isManagedServerRunning } from './devServer';
 import { getRunningNuxtProcesses, killProcess } from './processManager';
-import { debugLog, getConfig, showWarning, showInfo } from './utils';
+import { debugLog, getConfig, showWarning, showInfo, expandPath } from './utils';
 
 /**
  * Auto-kill state tracking
@@ -125,6 +125,7 @@ async function checkAutoKillConditions(): Promise<void> {
         const allProcesses = await getRunningNuxtProcesses();
         const managedServer = getManagedServer();
         const managedPid = managedServer?.process.pid?.toString();
+        const managedWorkingDir = managedServer?.workingDir;
 
         // Filter out our managed process
         const extraProcesses = allProcesses.filter(p => p.pid !== managedPid);
@@ -146,22 +147,35 @@ async function checkAutoKillConditions(): Promise<void> {
                 }
             }
 
-            // Max extra servers: kill oldest servers
-            if (maxExtraServers > 0 && extraProcesses.length > maxExtraServers) {
-                const toKill = extraProcesses
-                    .filter(p => !isNaN(parseInt(p.pid, 10)) && parseInt(p.pid, 10) > 0)
-                    .sort((a, b) => parseInt(a.pid, 10) - parseInt(b.pid, 10)) // Sort by PID (lower = older)
-                    .slice(0, extraProcesses.length - maxExtraServers);
+            // Max extra servers: kill oldest servers within the current workspace
+            if (maxExtraServers > 0) {
+                // Filter to only processes in the same workspace directory
+                const workspaceProcesses = managedWorkingDir
+                    ? extraProcesses.filter(proc => {
+                        const procDir = expandPath(proc.workingDir);
+                        return procDir === managedWorkingDir;
+                    })
+                    : extraProcesses;
 
-                debugLog(`Killing ${toKill.length} extra servers due to maxExtraServers limit`);
+                debugLog(`Found ${workspaceProcesses.length} extra server(s) in workspace`);
 
-                for (const proc of toKill) {
-                    try {
-                        await killProcess(proc.pid);
-                        await showInfo(`Auto-killed extra server (PID ${proc.pid}) due to maxExtraServers limit`);
-                        debugLog(`Auto-killed extra server PID ${proc.pid}`);
-                    } catch (error) {
-                        debugLog(`Failed to kill extra server ${proc.pid}:`, error);
+                // Only act if we have more workspace processes than the limit
+                if (workspaceProcesses.length > maxExtraServers) {
+                    const toKill = workspaceProcesses
+                        .filter(p => !isNaN(parseInt(p.pid, 10)) && parseInt(p.pid, 10) > 0)
+                        .sort((a, b) => parseInt(a.pid, 10) - parseInt(b.pid, 10)) // Sort by PID (lower = older)
+                        .slice(0, workspaceProcesses.length - maxExtraServers);
+
+                    debugLog(`Killing ${toKill.length} extra servers due to maxExtraServers limit`);
+
+                    for (const proc of toKill) {
+                        try {
+                            await killProcess(proc.pid);
+                            await showInfo(`Auto-killed extra server (PID ${proc.pid}) due to maxExtraServers limit`);
+                            debugLog(`Auto-killed extra server PID ${proc.pid}`);
+                        } catch (error) {
+                            debugLog(`Failed to kill extra server ${proc.pid}:`, error);
+                        }
                     }
                 }
             }

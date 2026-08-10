@@ -4,7 +4,15 @@ import * as fs from 'fs/promises';
 import { NuxtVersionInfo } from './types';
 import { OUTPUT_CHANNELS } from './constants';
 import { getRunningNuxtProcesses } from './processManager';
-import { expandPath, debugLog, getErrorMessage, getOrCreateOutputChannel, fileExists } from './utils';
+import {
+    expandPath,
+    debugLog,
+    getErrorMessage,
+    getOrCreateOutputChannel,
+    fileExists,
+    showError,
+    showInfo,
+} from './utils';
 
 interface PackageJson {
     version?: string;
@@ -129,7 +137,7 @@ export function formatVersionInfo(versionInfo: NuxtVersionInfo): string {
 export async function showNuxtVersion(): Promise<void> {
     const workspaceFolders = vscode.workspace.workspaceFolders;
     if (!workspaceFolders) {
-        void vscode.window.showErrorMessage('No workspace folder open');
+        await showError('No workspace folder open');
         return;
     }
 
@@ -146,10 +154,10 @@ export async function showNuxtVersion(): Promise<void> {
         outputChannel.show();
 
         const runningCount = versionInfo.running.length;
-        void vscode.window.showInformationMessage(
+        await showInfo(
             `Nuxt ${versionInfo.installed} installed. ${runningCount} instance(s) running.`
         );
     } catch (error) {
-        void vscode.window.showErrorMessage(`Failed to get version: ${getErrorMessage(error)}`);
+        await showError(`Failed to get version: ${getErrorMessage(error)}`);
     }
 }

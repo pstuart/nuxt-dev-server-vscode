@@ -191,17 +191,20 @@
     "version:major": "npm version major --no-git-tag-version",
     "package:do": "npm run compile && vsce package",
     "package": "npm run version:patch && npm run package:do",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "devDependencies": {
     "@types/node": "20.19.37",
-    "@types/vscode": "1.110.0",
+    "@types/vscode": "1.85.0",
     "@typescript-eslint/eslint-plugin": "8.59.3",
     "@typescript-eslint/parser": "8.59.3",
     "@vscode/vsce": "3.9.2",
     "eslint": "9.39.4",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.59.3"
+    "typescript-eslint": "8.59.3",
+    "vitest": "4.1.10"
   },
   "overrides": {
     "tmp": "0.2.7",

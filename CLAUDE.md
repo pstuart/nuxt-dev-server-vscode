@@ -20,6 +20,9 @@ npm run watch
 
 # Lint the codebase
 npm run lint
+
+# Run process-safety unit tests
+npm test
 ```
 
 ### Packaging and Versioning
@@ -38,9 +41,10 @@ npm run version:major  # 0.0.2 -> 1.0.0
 
 ### Testing the Extension
 To test during development:
-1. Press F5 in VS Code to launch Extension Development Host
-2. Open a Nuxt project in the new window
-3. The extension auto-activates when it detects `nuxt.config.{js,ts,mjs,mts}`
+1. Run `npm test`, `npm run compile`, and `npm run lint`
+2. Press F5 in VS Code to launch Extension Development Host using the committed launch configuration
+3. Open a Nuxt project in the new window
+4. The extension auto-activates when it detects `nuxt.config.{js,ts,mjs,mts}`
 
 ## Architecture
 

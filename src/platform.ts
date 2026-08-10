@@ -1,7 +1,13 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { PROCESS_PATTERNS } from './constants';
 import { sanitizePid, debugLog, getErrorMessage } from './utils';
+import {
+    ancestorPids,
+    matchesNuxtDevPreview,
+    parseUnixProcessTable,
+    ProcessTableEntry,
+    selectPreferredNuxtPort,
+} from './processLogic';
 
 const execFileAsync = promisify(execFile);
 
@@ -15,6 +21,7 @@ const execFileAsync = promisify(execFile);
 export interface ProcessEntry {
     pid: string;
     command: string;
+    ancestorPids: string[];
 }
 
 const BINARY_NAME_RE = /^[a-zA-Z0-9_-]+$/;
@@ -29,23 +36,17 @@ async function runPowerShell(script: string): Promise<string> {
     return stdout;
 }
 
-/** JS filter mirroring PROCESS_PATTERNS.NUXT_DEV_PREVIEW (case-insensitive). */
-function matchesNuxtDevPreview(command: string): boolean {
-    return /node.*nuxt.*(dev|preview)/i.test(command);
-}
-
 /**
  * List node processes whose command line matches the Nuxt dev/preview pattern.
  */
 export async function listNuxtProcesses(): Promise<ProcessEntry[]> {
     if (process.platform === 'win32') {
-        // Win32_Process exposes CommandLine; Get-Process does not.
-        // Emit one JSON object per line for robust parsing.
+        // Include every process so JS can reconstruct ancestry before filtering.
         const script = [
             "$ErrorActionPreference = 'SilentlyContinue'",
             "Get-CimInstance Win32_Process |",
-            "  Where-Object { $_.Name -match 'node' -and $_.CommandLine -and ($_.CommandLine -match 'nuxt') -and ($_.CommandLine -match 'dev|preview') } |",
-            "  ForEach-Object { (@{ pid = $_.ProcessId; command = $_.CommandLine } | ConvertTo-Json -Compress) }",
+            "  Where-Object { $_.CommandLine } |",
+            "  ForEach-Object { (@{ pid = $_.ProcessId; parentPid = $_.ParentProcessId; command = $_.CommandLine } | ConvertTo-Json -Compress) }",
         ].join(' ');
 
         try {
@@ -54,22 +55,36 @@ export async function listNuxtProcesses(): Promise<ProcessEntry[]> {
                 debugLog('No Nuxt processes found (Windows empty output)');
                 return [];
             }
-            const entries: ProcessEntry[] = [];
+            const table: ProcessTableEntry[] = [];
             for (const line of stdout.split(/\r?\n/)) {
                 const trimmed = line.trim();
                 if (!trimmed?.startsWith('{')) {
                     continue;
                 }
                 try {
-                    const obj = JSON.parse(trimmed) as { pid?: number | string; command?: string };
-                    if (obj.pid !== undefined && obj.pid !== null && obj.command) {
-                        entries.push({ pid: String(obj.pid), command: String(obj.command) });
+                    const obj = JSON.parse(trimmed) as {
+                        pid?: number | string;
+                        parentPid?: number | string;
+                        command?: string;
+                    };
+                    if (obj.pid !== undefined && obj.parentPid !== undefined && obj.command) {
+                        table.push({
+                            pid: String(obj.pid),
+                            parentPid: String(obj.parentPid),
+                            command: String(obj.command),
+                        });
                     }
                 } catch {
                     // skip malformed line
                 }
             }
-            return entries;
+            return table
+                .filter(entry => matchesNuxtDevPreview(entry.command))
+                .map(entry => ({
+                    pid: entry.pid,
+                    command: entry.command,
+                    ancestorPids: ancestorPids(entry.pid, table),
+                }));
         } catch (error) {
             debugLog('Windows process list failed:', getErrorMessage(error));
             return [];
@@ -78,26 +93,18 @@ export async function listNuxtProcesses(): Promise<ProcessEntry[]> {
 
     // macOS / Linux: parse `ps` in JS (no shell pipeline)
     try {
-        const { stdout } = await execFileAsync('ps', ['-eo', 'pid,command'], {
+        const { stdout } = await execFileAsync('ps', ['-eo', 'pid=,ppid=,command='], {
             maxBuffer: 10 * 1024 * 1024,
             encoding: 'utf8',
         });
-        const entries: ProcessEntry[] = [];
-        for (const line of stdout.split('\n')) {
-            const trimmed = line.trim();
-            if (!trimmed) {
-                continue;
-            }
-            const match = trimmed.match(/^(\d+)\s+(.+)$/);
-            if (!match) {
-                continue;
-            }
-            const pid = match[1];
-            const command = match[2];
-            if (matchesNuxtDevPreview(command) && !/\bgrep\b/.test(command)) {
-                entries.push({ pid, command });
-            }
-        }
+        const table = parseUnixProcessTable(stdout);
+        const entries = table
+            .filter(entry => matchesNuxtDevPreview(entry.command))
+            .map(entry => ({
+                pid: entry.pid,
+                command: entry.command,
+                ancestorPids: ancestorPids(entry.pid, table),
+            }));
         if (entries.length === 0) {
             debugLog('No Nuxt processes found (ps filter empty)');
         }
@@ -111,17 +118,20 @@ export async function listNuxtProcesses(): Promise<ProcessEntry[]> {
 /**
  * Check if a process with the given PID is listening on any TCP port.
  */
-export async function getProcessPort(pid: number): Promise<string | undefined> {
+export async function getProcessPort(
+    pid: number,
+    expectedPort?: number
+): Promise<string | undefined> {
     const safePid = sanitizePid(String(pid));
 
     if (process.platform === 'win32') {
         const script =
             `Get-NetTCPConnection -OwningProcess ${safePid} -State Listen -ErrorAction SilentlyContinue | ` +
-            `Select-Object -ExpandProperty LocalPort -First 1`;
+            `Select-Object -ExpandProperty LocalPort`;
         try {
             const stdout = await runPowerShell(script);
-            const port = stdout.trim().split(/\r?\n/).map(p => p.trim()).find(Boolean);
-            return port ?? undefined;
+            const ports = stdout.trim().split(/\r?\n/).map(port => port.trim()).filter(Boolean);
+            return selectPreferredNuxtPort(ports, expectedPort);
         } catch (error) {
             debugLog(`Could not get port for pid ${pid} on Windows:`, getErrorMessage(error));
             return undefined;
@@ -134,14 +144,32 @@ export async function getProcessPort(pid: number): Promise<string | undefined> {
             ['-Pan', '-p', String(safePid), '-iTCP', '-sTCP:LISTEN'],
             { encoding: 'utf8', maxBuffer: 1024 * 1024 }
         );
-        const portMatch = stdout.match(PROCESS_PATTERNS.LSOF_PORT_REGEX);
-        if (portMatch) {
-            return portMatch[1];
-        }
+        const ports = Array.from(stdout.matchAll(/:(\d+)\s+\(LISTEN\)/g), match => match[1]);
+        return selectPreferredNuxtPort(ports, expectedPort);
     } catch {
         // Not listening on any port
     }
     return undefined;
+}
+
+/** Return the exact command for identity checks before force-killing a PID. */
+export async function getProcessCommand(pid: number): Promise<string | undefined> {
+    const safePid = sanitizePid(String(pid));
+    if (process.platform === 'win32') {
+        const script =
+            `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${safePid}" -ErrorAction SilentlyContinue; ` +
+            `if ($p) { $p.CommandLine }`;
+        const stdout = await runPowerShell(script);
+        return stdout.trim() || undefined;
+    }
+    try {
+        const { stdout } = await execFileAsync('ps', ['-p', String(safePid), '-o', 'command='], {
+            encoding: 'utf8',
+        });
+        return stdout.trim() || undefined;
+    } catch {
+        return undefined;
+    }
 }
 
 /**

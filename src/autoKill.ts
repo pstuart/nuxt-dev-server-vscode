@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { getManagedServer, stopDevServer, isManagedServerRunning } from './devServer';
 import { getRunningNuxtProcesses, killProcess } from './processManager';
 import { debugLog, getConfig, showWarning, showInfo, expandPath } from './utils';
+import { selectExtraNuxtProcesses } from './processLogic';
 
 /**
  * Auto-kill state tracking
@@ -84,41 +85,12 @@ export function onServerStop(): void {
 /**
  * Check auto-kill conditions and kill servers if needed
  */
-async function checkAutoKillConditions(): Promise<void> {
+export async function checkAutoKillConditions(): Promise<void> {
     const config = getConfig();
     const autoKillTimeout = config.autoKillTimeout;
     const autoKillIdleTime = config.autoKillIdleTime;
     const enableAutoCleanup = config.enableAutoCleanup;
     const maxExtraServers = config.maxExtraServers;
-
-    // Check if we have a managed server running
-    if (!isManagedServerRunning()) {
-        return;
-    }
-
-    const now = Date.now();
-
-    // Check total runtime timeout
-    if (autoKillTimeout > 0 && autoKillState.startTime > 0) {
-        const runtimeMinutes = (now - autoKillState.startTime) / (1000 * 60);
-        if (runtimeMinutes >= autoKillTimeout) {
-            debugLog(`Auto-kill timeout reached: ${runtimeMinutes.toFixed(1)} minutes`);
-            await showWarning(`Dev server auto-killed after ${autoKillTimeout} minutes of runtime`);
-            await stopDevServer();
-            return;
-        }
-    }
-
-    // Check idle time
-    if (autoKillIdleTime > 0 && autoKillState.lastActivity > 0) {
-        const idleMinutes = (now - autoKillState.lastActivity) / (1000 * 60);
-        if (idleMinutes >= autoKillIdleTime) {
-            debugLog(`Auto-kill idle timeout reached: ${idleMinutes.toFixed(1)} minutes`);
-            await showWarning(`Dev server auto-killed after ${autoKillIdleTime} minutes of inactivity`);
-            await stopDevServer();
-            return;
-        }
-    }
 
     // Check for extra servers and cleanup if needed
     if (maxExtraServers > 0 || enableAutoCleanup) {
@@ -126,9 +98,14 @@ async function checkAutoKillConditions(): Promise<void> {
         const managedServer = getManagedServer();
         const managedPid = managedServer?.process.pid?.toString();
         const managedWorkingDir = managedServer?.workingDir;
-
-        // Filter out our managed process
-        const extraProcesses = allProcesses.filter(p => p.pid !== managedPid);
+        const workspaceDir = managedWorkingDir ?? vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        const expandedProcesses = allProcesses.map(proc => ({
+            ...proc,
+            workingDir: expandPath(proc.workingDir),
+        }));
+        const extraProcesses = workspaceDir
+            ? selectExtraNuxtProcesses(expandedProcesses, workspaceDir, managedPid)
+            : [];
 
         if (extraProcesses.length > 0) {
             debugLog(`Found ${extraProcesses.length} extra Nuxt server(s)`);
@@ -149,26 +126,18 @@ async function checkAutoKillConditions(): Promise<void> {
 
             // Max extra servers: kill oldest servers within the current workspace
             if (maxExtraServers > 0) {
-                // Filter to only processes in the same workspace directory
-                const workspaceProcesses = managedWorkingDir
-                    ? extraProcesses.filter(proc => {
-                        const procDir = expandPath(proc.workingDir);
-                        return procDir === managedWorkingDir;
-                    })
-                    : extraProcesses;
-
-                debugLog(`Found ${workspaceProcesses.length} extra server(s) in workspace`);
+                debugLog(`Found ${extraProcesses.length} extra server(s) in workspace`);
 
                 // Only act if we have more workspace processes than the limit
-                if (workspaceProcesses.length > maxExtraServers) {
-                    const toKill = workspaceProcesses
+                if (extraProcesses.length > maxExtraServers) {
+                    const toKill = extraProcesses
                         .filter(p => !isNaN(parseInt(p.pid, 10)) && parseInt(p.pid, 10) > 0)
                         .sort((a, b) => parseInt(a.pid, 10) - parseInt(b.pid, 10)) // Sort by PID (lower = older)
-                        .slice(0, workspaceProcesses.length - maxExtraServers);
+                        .slice(0, extraProcesses.length - maxExtraServers);
 
                     debugLog(`Killing ${toKill.length} extra servers due to maxExtraServers limit`);
 
-                    for (const proc of toKill) {
+                    await Promise.all(toKill.map(async proc => {
                         try {
                             await killProcess(proc.pid);
                             await showInfo(`Auto-killed extra server (PID ${proc.pid}) due to maxExtraServers limit`);
@@ -176,9 +145,34 @@ async function checkAutoKillConditions(): Promise<void> {
                         } catch (error) {
                             debugLog(`Failed to kill extra server ${proc.pid}:`, error);
                         }
-                    }
+                    }));
                 }
             }
+        }
+    }
+
+    // Runtime and idle policies only apply to a server started by this extension.
+    if (!isManagedServerRunning()) {
+        return;
+    }
+
+    const now = Date.now();
+    if (autoKillTimeout > 0 && autoKillState.startTime > 0) {
+        const runtimeMinutes = (now - autoKillState.startTime) / (1000 * 60);
+        if (runtimeMinutes >= autoKillTimeout) {
+            debugLog(`Auto-kill timeout reached: ${runtimeMinutes.toFixed(1)} minutes`);
+            await showWarning(`Dev server auto-killed after ${autoKillTimeout} minutes of runtime`);
+            await stopDevServer();
+            return;
+        }
+    }
+
+    if (autoKillIdleTime > 0 && autoKillState.lastActivity > 0) {
+        const idleMinutes = (now - autoKillState.lastActivity) / (1000 * 60);
+        if (idleMinutes >= autoKillIdleTime) {
+            debugLog(`Auto-kill idle timeout reached: ${idleMinutes.toFixed(1)} minutes`);
+            await showWarning(`Dev server auto-killed after ${autoKillIdleTime} minutes of inactivity`);
+            await stopDevServer();
         }
     }
 }

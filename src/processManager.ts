@@ -174,7 +174,10 @@ export async function killProcess(pid: string): Promise<void> {
         process.kill(numPid, 'SIGKILL');
     } catch (error) {
         debugLog(`Error killing process ${numPid}:`, getErrorMessage(error));
-        throw new Error(`Failed to kill process ${numPid}: ${getErrorMessage(error)}`);
+        throw new Error(
+            `Failed to kill process ${numPid}: ${getErrorMessage(error)}`,
+            { cause: error }
+        );
     }
 }
 

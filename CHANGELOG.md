@@ -12,7 +12,6 @@ Major update with performance, security, and automation improvements.
 ### Added
 - **Auto-Kill Features**: Automatically kill servers after configurable timeout or idle time
 - **Activity Tracking**: File system monitoring to detect idle servers
-- **Progress Indicators**: Visual feedback during start/stop operations
 - **Automatic Cleanup**: Configurable limits for extra servers with automatic cleanup
 - **Custom Commands**: Support for custom dev commands via settings
 - **Configurable Settings**: Nine new settings for customization

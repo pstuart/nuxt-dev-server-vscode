@@ -18,7 +18,6 @@ A Visual Studio Code extension to manage Nuxt development servers directly from 
 - **Quick Browser Access** - Open your dev server in the browser with one click
 - **Auto-Kill Features** - Automatically kill servers after timeout or idle time
 - **Activity Tracking** - Monitors file changes to detect idle servers
-- **Progress Indicators** - Visual feedback during start/stop operations
 - **Configurable Settings** - Customize timeout, intervals, and behavior
 - **Security Hardened** - PID validation, safe JSON parsing, input sanitization
 
@@ -248,8 +247,7 @@ npm run version:major  # 0.0.2 -> 1.0.0
 See [PUBLISHING.md](PUBLISHING.md) for detailed instructions on:
 - Setting up your publisher account
 - Creating and configuring PAT tokens
-- Publishing via GitHub Actions
-- Manual publishing with vsce
+- Building and publishing locally with vsce
 
 ## Release Notes
 
@@ -265,7 +263,6 @@ Major update with performance, security, and automation improvements:
 - Auto-kill servers after configurable timeout or idle time
 - Activity tracking with file system monitoring for idle detection
 - Graceful shutdown (SIGTERM before SIGKILL) for cleaner process termination
-- Progress indicators for start/stop operations
 - Automatic cleanup of extra servers with configurable limits
 - Support for custom dev commands
 - Configurable status bar update interval
@@ -285,7 +282,7 @@ Major update with performance, security, and automation improvements:
 - Configuration hot-reload support
 
 **UI Enhancements:**
-- Better status indicators with progress feedback
+- Better status indicators and activity feedback
 - Improved notification system
 - Timestamped log entries in output channel
 - More informative error messages

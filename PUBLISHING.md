@@ -35,61 +35,23 @@ This guide explains how to publish the Nuxt Dev Server Manager extension to the 
 6. Click "Create"
 7. **IMPORTANT**: Copy the token immediately - you won't be able to see it again
 
-### 3. Add Token to GitHub Secrets
+Keep the PAT in the local credential store. This repository intentionally has
+no GitHub Actions release workflow, so do not add the token to GitHub secrets.
 
-1. Go to your GitHub repository
-2. Navigate to: Settings → Secrets and variables → Actions
-3. Click "New repository secret"
-4. Add the secret:
-   - **Name**: `VSCE_PAT`
-   - **Value**: Paste the PAT token you copied
-5. Click "Add secret"
+## Publishing Locally
 
-## Publishing Methods
+Start from a clean, current `main`, install the exact lockfile, and run the
+local gates:
 
-### Method 1: Automatic Publishing (GitHub Release)
+```bash
+npm ci
+npm run compile
+npm run lint
+npm run package:do
+```
 
-1. Update version in package.json (or it will auto-bump on package):
-   ```bash
-   npm run version:patch  # 0.0.2 -> 0.0.3
-   # or
-   npm run version:minor  # 0.0.2 -> 0.1.0
-   # or
-   npm run version:major  # 0.0.2 -> 1.0.0
-   ```
-
-2. Commit and push changes:
-   ```bash
-   git add package.json
-   git commit -m "Bump version to 0.0.3"
-   git push
-   ```
-
-3. Create a GitHub Release:
-   ```bash
-   git tag v0.0.3
-   git push origin v0.0.3
-   ```
-
-4. Go to GitHub → Releases → Create new release
-5. Choose the tag you just created
-6. Write release notes
-7. Click "Publish release"
-
-The GitHub Action will automatically:
-- Build the extension
-- Publish to VS Code Marketplace
-- Attach the VSIX file to the release
-
-### Method 2: Manual Workflow Dispatch
-
-1. Go to GitHub → Actions
-2. Select "Publish Extension" workflow
-3. Click "Run workflow"
-4. Optionally specify a version (e.g., `0.0.3`)
-5. Click "Run workflow"
-
-### Method 3: Manual Local Publishing
+Install the generated `.vsix` locally and smoke-test start, stop, restart,
+process listing, browser opening, and workspace-scoped cleanup before publishing.
 
 ```bash
 # Make sure you're logged in (one-time)
@@ -141,7 +103,6 @@ After publishing, verify your extension:
 ### "Authentication failed"
 - Check that your PAT token is still valid (they expire)
 - Verify the token has "Marketplace (Manage)" scope
-- Make sure the GitHub secret `VSCE_PAT` is set correctly
 
 ### "Version already exists"
 - You can't republish the same version
@@ -167,20 +128,6 @@ npx vsce unpublish pstuart.nuxt-dev-server
 ```
 
 **Warning**: Unpublishing is permanent and should be avoided if possible. Consider deprecating instead.
-
-## CI/CD Workflow
-
-The repository includes two workflows:
-
-1. **CI** (`.github/workflows/ci.yml`):
-   - Runs on every push/PR to main
-   - Builds and packages the extension
-   - Uploads VSIX as artifact for testing
-
-2. **Publish** (`.github/workflows/publish.yml`):
-   - Runs on GitHub releases
-   - Publishes to VS Code Marketplace
-   - Attaches VSIX to the release
 
 ## Resources
 

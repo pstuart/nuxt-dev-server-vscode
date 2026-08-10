@@ -20,8 +20,7 @@ export function activate(context: vscode.ExtensionContext): void {
     debugLog('Nuxt Dev Server Manager activated');
 
     // Initialize status bar
-    const statusBar = initializeStatusBar(context);
-    context.subscriptions.push(statusBar);
+    initializeStatusBar(context);
 
     // Initialize auto-kill module
     initializeAutoKill(context);

@@ -159,26 +159,6 @@ export function getErrorMessage(error: unknown): string {
 }
 
 /**
- * Check if an error indicates no processes were found
- */
-export function isNoProcessError(error: unknown): boolean {
-    if (error && typeof error === 'object' && 'code' in error) {
-        return (error as { code: number }).code === 1;
-    }
-    return false;
-}
-
-/**
- * Truncate a string with ellipsis
- */
-export function truncate(str: string, maxLength: number): string {
-    if (str.length <= maxLength) {
-        return str;
-    }
-    return str.substring(0, maxLength - 3) + '...';
-}
-
-/**
  * Check if a file exists (async)
  */
 export async function fileExists(filePath: string): Promise<boolean> {

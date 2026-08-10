@@ -12,6 +12,8 @@ export interface NuxtProcess {
     workingDir: string;
     /** Port the server is listening on */
     port?: string;
+    /** Parent chain, nearest first, used to identify package-manager descendants */
+    ancestorPids: string[];
 }
 
 /**

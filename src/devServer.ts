@@ -17,7 +17,7 @@ import {
 import {
     killProcessTree,
     killProcessesByWorkingDir,
-    waitForProcessPort,
+    waitForProcessTreePort,
     verifyProcessTerminated
 } from './processManager';
 import { onServerStart, onServerStop } from './autoKill';
@@ -269,6 +269,10 @@ async function startDevServerInternal(): Promise<boolean> {
     let detectedPort = config.defaultPort;
     let detectedUrl = `http://localhost:${detectedPort}`;
     let serverStarted = false;
+    let resolveOutputPort: (port: number) => void;
+    const outputPort = new Promise<number>(resolve => {
+        resolveOutputPort = resolve;
+    });
 
     // Handle stdout
     childProcess.stdout?.on('data', (data: Buffer) => {
@@ -288,6 +292,12 @@ async function startDevServerInternal(): Promise<boolean> {
             }
             detectedPort = parsedPort;
             detectedUrl = `http://localhost:${detectedPort}`;
+            resolveOutputPort(detectedPort);
+            if (managedServer?.process === childProcess) {
+                managedServer.port = detectedPort;
+                managedServer.url = detectedUrl;
+                forceStatusBarUpdate();
+            }
             debugLog(`Detected server port: ${detectedPort}`);
 
             if (!serverStarted) {
@@ -345,7 +355,18 @@ async function startDevServerInternal(): Promise<boolean> {
     };
 
     // Wait for server to start listening (with timeout)
-    const actualPort = await waitForProcessPort(childProcess.pid, DEFAULT_CONFIG.SERVER_START_TIMEOUT_MS);
+    const discoveryController = new AbortController();
+    const actualPort = await Promise.race([
+        outputPort,
+        waitForProcessTreePort(
+            childProcess.pid,
+            rootPath,
+            detectedPort,
+            DEFAULT_CONFIG.SERVER_START_TIMEOUT_MS,
+            discoveryController.signal
+        ),
+    ]);
+    discoveryController.abort();
 
     if (actualPort !== null) {
         // Update with actual detected port

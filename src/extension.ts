@@ -328,15 +328,12 @@ async function openInBrowser(): Promise<void> {
     const managedServer = getManagedServer();
 
     if (!managedServer) {
-        // Check if any servers are running
-        const runningCount = await getRunningNuxtProcessCount();
-        if (runningCount === 0) {
+        const processes = await getRunningNuxtProcesses();
+        if (processes.length === 0) {
             await showWarning('No Nuxt server is running');
             return;
         }
 
-        // If other servers running, try to open the first one
-        const processes = await getRunningNuxtProcesses();
         if (processes.length > 0 && processes[0].port) {
             const url = `http://localhost:${processes[0].port}`;
             void vscode.env.openExternal(vscode.Uri.parse(url));

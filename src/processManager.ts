@@ -5,8 +5,10 @@ import {
     listNuxtProcesses,
     getProcessPort,
     getProcessWorkingDir,
+    getProcessCommand,
     killChildProcesses
 } from './platform';
+import { selectManagedNuxtProcess } from './processLogic';
 
 /**
  * Track process detection failures
@@ -14,6 +16,7 @@ import {
 let consecutiveFailures = 0;
 let lastWarningTime = 0;
 const WARNING_THROTTLE_MS = 60000; // Only warn once per minute
+const workingDirCache = new Map<string, { command: string; workingDir: string }>();
 
 /**
  * Get all running Nuxt processes with port-based detection
@@ -35,6 +38,12 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
         }
 
         const processMap = new Map<string, NuxtProcess>();
+        const activePids = new Set(entries.map(entry => entry.pid));
+        for (const cachedPid of workingDirCache.keys()) {
+            if (!activePids.has(cachedPid)) {
+                workingDirCache.delete(cachedPid);
+            }
+        }
 
         for (const entry of entries) {
             const pid = entry.pid;
@@ -62,12 +71,19 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
             }
 
             // Get working directory
-            let workingDir = 'Unknown';
-            try {
-                const sanitizedPid = sanitizePid(pid);
-                workingDir = await getProcessWorkingDir(sanitizedPid);
-            } catch (error) {
-                debugLog(`Could not get working directory for ${pid}`);
+            let workingDir = workingDirCache.get(pid)?.command === fullCommand
+                ? workingDirCache.get(pid)?.workingDir ?? 'Unknown'
+                : 'Unknown';
+            if (workingDir === 'Unknown') {
+                try {
+                    const sanitizedPid = sanitizePid(pid);
+                    workingDir = await getProcessWorkingDir(sanitizedPid);
+                    if (workingDir !== 'Unknown') {
+                        workingDirCache.set(pid, { command: fullCommand, workingDir });
+                    }
+                } catch (error) {
+                    debugLog(`Could not get working directory for ${pid}`);
+                }
             }
 
             processMap.set(pid, {
@@ -76,7 +92,8 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
                     ? fullCommand.substring(0, DEFAULT_CONFIG.COMMAND_TRUNCATE_SUFFIX_LENGTH) + '...'
                     : fullCommand,
                 workingDir: formatPathForDisplay(workingDir),
-                port
+                port,
+                ancestorPids: entry.ancestorPids,
             });
         }
 
@@ -127,6 +144,7 @@ export async function killProcess(pid: string): Promise<void> {
     debugLog(`Killing process ${numPid}`);
 
     try {
+        const originalCommand = await getProcessCommand(numPid);
         // Try graceful kill first
         process.kill(numPid, 'SIGTERM');
 
@@ -137,17 +155,23 @@ export async function killProcess(pid: string): Promise<void> {
         // caller actually used it; the SIGTERM-to-SIGKILL gap was hardcoded
         // to 500ms regardless of what the user set.
         const gracefulTimeoutMs = getConfig().gracefulShutdownTimeout;
-        await sleep(gracefulTimeoutMs);
-
-        // Check if still alive, force kill if needed
-        try {
-            process.kill(numPid, 0); // Check if process exists
-            debugLog(`Process ${numPid} still alive after ${gracefulTimeoutMs}ms, sending SIGKILL`);
-            process.kill(numPid, 'SIGKILL');
-        } catch (error) {
-            // Process already dead, good
-            debugLog(`Process ${numPid} terminated successfully`);
+        const deadline = Date.now() + gracefulTimeoutMs;
+        while (Date.now() < deadline) {
+            try {
+                process.kill(numPid, 0);
+            } catch {
+                debugLog(`Process ${numPid} terminated successfully`);
+                return;
+            }
+            await sleep(Math.min(100, Math.max(0, deadline - Date.now())));
         }
+
+        const currentCommand = await getProcessCommand(numPid);
+        if (!originalCommand || currentCommand !== originalCommand) {
+            throw new Error(`PID ${numPid} changed identity before SIGKILL; refusing escalation`);
+        }
+        debugLog(`Process ${numPid} still alive after ${gracefulTimeoutMs}ms, sending SIGKILL`);
+        process.kill(numPid, 'SIGKILL');
     } catch (error) {
         debugLog(`Error killing process ${numPid}:`, getErrorMessage(error));
         throw new Error(`Failed to kill process ${numPid}: ${getErrorMessage(error)}`);
@@ -182,16 +206,13 @@ export async function killAllNuxtProcesses(): Promise<number> {
         return 0;
     }
 
-    // Kill each process individually for better reliability
-    let killedCount = 0;
-    for (const proc of processes) {
-        try {
-            await killProcess(proc.pid);
-            killedCount++;
-        } catch (error) {
-            debugLog(`Failed to kill ${proc.pid}:`, getErrorMessage(error));
+    const results = await Promise.allSettled(processes.map(proc => killProcess(proc.pid)));
+    const killedCount = results.filter(result => result.status === 'fulfilled').length;
+    results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+            debugLog(`Failed to kill ${processes[index].pid}:`, getErrorMessage(result.reason));
         }
-    }
+    });
 
     debugLog(`Killed ${killedCount} of ${count} processes`);
     return killedCount;
@@ -211,17 +232,13 @@ export async function killProcessesByWorkingDir(workingDir: string): Promise<num
 
     debugLog(`Found ${matchingProcesses.length} matching processes`);
 
-    let killedCount = 0;
-    for (const proc of matchingProcesses) {
-        try {
-            await killProcess(proc.pid);
-            killedCount++;
-        } catch (error) {
-            debugLog(`Failed to kill ${proc.pid}:`, getErrorMessage(error));
+    const results = await Promise.allSettled(matchingProcesses.map(proc => killProcess(proc.pid)));
+    results.forEach((result, index) => {
+        if (result.status === 'rejected') {
+            debugLog(`Failed to kill ${matchingProcesses[index].pid}:`, getErrorMessage(result.reason));
         }
-    }
-
-    return killedCount;
+    });
+    return results.filter(result => result.status === 'fulfilled').length;
 }
 
 /**
@@ -268,6 +285,43 @@ export async function waitForProcessPort(
     }
 
     debugLog(`Timeout waiting for process ${pid} to listen on port`);
+    return null;
+}
+
+/** Wait for a listening Nuxt descendant of a package-manager wrapper. */
+export async function waitForProcessTreePort(
+    parentPid: number,
+    workingDir: string,
+    expectedPort: number,
+    timeoutMs: number = DEFAULT_CONFIG.SERVER_START_TIMEOUT_MS,
+    signal?: AbortSignal
+): Promise<number | null> {
+    const parent = sanitizePid(String(parentPid)).toString();
+    const startTime = Date.now();
+    while (!signal?.aborted && Date.now() - startTime < timeoutMs) {
+        const processes = (await getRunningNuxtProcesses()).map(proc => ({
+            ...proc,
+            workingDir: expandPath(proc.workingDir),
+        }));
+        const descendant = selectManagedNuxtProcess(
+            processes,
+            parent,
+            workingDir,
+            expectedPort
+        );
+        if (descendant?.port) {
+            const port = Number(descendant.port);
+            if (Number.isInteger(port) && port >= 1 && port <= 65535) {
+                return port;
+            }
+        }
+        try {
+            process.kill(parentPid, 0);
+        } catch {
+            return null;
+        }
+        await sleep(250);
+    }
     return null;
 }
 

@@ -2,8 +2,6 @@
  * Default configuration values
  */
 export const DEFAULT_CONFIG = {
-    DEFAULT_PORT: 3000,
-    UPDATE_INTERVAL_MS: 5000, // Increased from 3000 to reduce CPU usage
     STOP_CLEANUP_WAIT_MS: 1000,
     RESTART_DELAY_MS: 1500,
     SERVER_START_TIMEOUT_MS: 30000,
@@ -15,7 +13,6 @@ export const DEFAULT_CONFIG = {
  * Process detection patterns
  */
 export const PROCESS_PATTERNS = {
-    NUXT_DEV_PREVIEW: 'node.*nuxt.*(dev|preview)',
     PORT_REGEX: /http:\/\/localhost:(\d+)/,
     LSOF_PORT_REGEX: /:(\d+)\s+\(LISTEN\)/,
 } as const;
@@ -28,7 +25,6 @@ export const LOCK_FILES = {
     PNPM: 'pnpm-lock.yaml',
     BUN: 'bun.lockb',
     BUN_TEXT: 'bun.lock',
-    NPM: 'package-lock.json',
 } as const;
 
 /**

@@ -324,6 +324,8 @@ async function startDevServerInternal(): Promise<boolean> {
         if (managedServer?.process === childProcess) {
             managedServer = null;
             forceStatusBarUpdate();
+            // Clear auto-kill state when server terminates
+            onServerStop();
         }
     });
 
@@ -331,6 +333,13 @@ async function startDevServerInternal(): Promise<boolean> {
     childProcess.on('exit', (code, signal) => {
         debugLog(`Server process exited with code ${code}, signal ${signal}`);
         outputChannel.appendLine(`\nServer process exited with code ${code}, signal ${signal}`);
+
+        if (managedServer?.process === childProcess) {
+            managedServer = null;
+            forceStatusBarUpdate();
+            // Clear auto-kill state when server exits
+            onServerStop();
+        }
     });
 
     // Handle errors
@@ -342,6 +351,8 @@ async function startDevServerInternal(): Promise<boolean> {
         if (managedServer?.process === childProcess) {
             managedServer = null;
             forceStatusBarUpdate();
+            // Clear auto-kill state when server fails to start
+            onServerStop();
         }
     });
 
@@ -394,6 +405,8 @@ async function startDevServerInternal(): Promise<boolean> {
         await showError(
             'Nuxt dev server exited before it started listening — see the "Nuxt Dev Server" output for details.'
         );
+        // Clear auto-kill state when server exits before starting
+        onServerStop();
         return false;
     } else {
         debugLog('Server did not start listening within timeout period');

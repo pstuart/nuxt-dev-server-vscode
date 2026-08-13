@@ -23,6 +23,7 @@ import {
 import { onServerStart, onServerStop } from './autoKill';
 import { forceStatusBarUpdate } from './statusBar';
 import { isBinaryAvailable } from './platform';
+import { isValidPort } from './validation';
 
 /**
  * Whitelist of allowed package managers
@@ -283,10 +284,8 @@ async function startDevServerInternal(): Promise<boolean> {
         const portMatch = output.match(PROCESS_PATTERNS.PORT_REGEX);
         if (portMatch?.[1]) {
             const parsedPort = parseInt(portMatch[1], 10);
-            // PORT_REGEX uses \d+ which captures any digit string, so a
-            // pathological Nuxt-stdout line ("http://localhost:99999") would
-            // produce an out-of-range port. Bound to 1-65535 before adopting.
-            if (parsedPort < 1 || parsedPort > 65535) {
+            // Validate port is within valid TCP range before adopting
+            if (!isValidPort(parsedPort)) {
                 debugLog(`Ignoring out-of-range port from Nuxt stdout: ${parsedPort}`);
                 return;
             }

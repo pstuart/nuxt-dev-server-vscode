@@ -25,6 +25,7 @@ import { forceStatusBarUpdate } from './statusBar';
 import { isBinaryAvailable } from './platform';
 import { isValidDevCommand } from './processLogic';
 import { refuseIfUntrusted } from './workspaceTrust';
+import { isValidPort } from './validation';
 
 /**
  * Whitelist of allowed package managers
@@ -268,10 +269,8 @@ async function startDevServerInternal(): Promise<boolean> {
         const portMatch = output.match(PROCESS_PATTERNS.PORT_REGEX);
         if (portMatch?.[1]) {
             const parsedPort = parseInt(portMatch[1], 10);
-            // PORT_REGEX uses \d+ which captures any digit string, so a
-            // pathological Nuxt-stdout line ("http://localhost:99999") would
-            // produce an out-of-range port. Bound to 1-65535 before adopting.
-            if (parsedPort < 1 || parsedPort > 65535) {
+            // Validate port is within valid TCP range before adopting
+            if (!isValidPort(parsedPort)) {
                 debugLog(`Ignoring out-of-range port from Nuxt stdout: ${parsedPort}`);
                 return;
             }
@@ -310,6 +309,8 @@ async function startDevServerInternal(): Promise<boolean> {
         if (managedServer?.process === childProcess) {
             managedServer = null;
             forceStatusBarUpdate();
+            // Clear auto-kill state when server terminates
+            onServerStop();
         }
     });
 
@@ -317,6 +318,13 @@ async function startDevServerInternal(): Promise<boolean> {
     childProcess.on('exit', (code, signal) => {
         debugLog(`Server process exited with code ${code}, signal ${signal}`);
         outputChannel.appendLine(`\nServer process exited with code ${code}, signal ${signal}`);
+
+        if (managedServer?.process === childProcess) {
+            managedServer = null;
+            forceStatusBarUpdate();
+            // Clear auto-kill state when server exits
+            onServerStop();
+        }
     });
 
     // Handle errors
@@ -328,6 +336,8 @@ async function startDevServerInternal(): Promise<boolean> {
         if (managedServer?.process === childProcess) {
             managedServer = null;
             forceStatusBarUpdate();
+            // Clear auto-kill state when server fails to start
+            onServerStop();
         }
     });
 
@@ -380,6 +390,8 @@ async function startDevServerInternal(): Promise<boolean> {
         await showError(
             'Nuxt dev server exited before it started listening — see the "Nuxt Dev Server" output for details.'
         );
+        // Clear auto-kill state when server exits before starting
+        onServerStop();
         return false;
     } else {
         debugLog('Server did not start listening within timeout period');

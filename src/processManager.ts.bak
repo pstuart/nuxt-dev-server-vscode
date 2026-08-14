@@ -8,8 +8,8 @@ import {
     getProcessCommand,
     killChildProcesses
 } from './platform';
-import { selectWaitForProcessTreePort, shouldRefuseSigkillEscalation } from './processLogic';
-import { isValidPort } from './validation';
+import { selectManagedNuxtProcess } from './processLogic';
+import { isValidPort, parsePort, isPortNumber } from './validation';
 
 /**
  * Track process detection failures
@@ -67,9 +67,8 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
             }
 
             // Only include if it has a listening port (actual server)
-            // Parse and validate port range to prevent out-of-range values
+            // Validate port range to prevent out-of-range values
             if (!port) {
-                debugLog(`Process ${pid} has no port, skipping`);
                 continue;
             }
             const parsedPort = parseInt(port, 10);
@@ -175,7 +174,7 @@ export async function killProcess(pid: string): Promise<void> {
         }
 
         const currentCommand = await getProcessCommand(numPid);
-        if (shouldRefuseSigkillEscalation(originalCommand, currentCommand)) {
+        if (!originalCommand || currentCommand !== originalCommand) {
             throw new Error(`PID ${numPid} changed identity before SIGKILL; refusing escalation`);
         }
         debugLog(`Process ${numPid} still alive after ${gracefulTimeoutMs}ms, sending SIGKILL`);
@@ -271,12 +270,14 @@ export async function waitForProcessPort(
             const port = await getProcessPort(safePid);
             if (port) {
                 const parsedPort = parseInt(port, 10);
-                // Validate port is within valid TCP range before treating as listener
-                if (isValidPort(parsedPort)) {
+                // Port from lsof/netstat should be a valid number; bound to
+                // valid TCP port range (1-65535) before treating as listener.
+                if (parsedPort < 1 || parsedPort > 65535) {
+                    debugLog(`Ignoring out-of-range port for pid ${pid}: ${parsedPort}`);
+                } else {
                     debugLog(`Process ${pid} is listening on port ${parsedPort}`);
                     return parsedPort;
                 }
-                debugLog(`Ignoring out-of-range port for pid ${pid}: ${parsedPort}`);
             }
         } catch (error) {
             // Not listening yet
@@ -312,9 +313,17 @@ export async function waitForProcessTreePort(
             ...proc,
             workingDir: expandPath(proc.workingDir),
         }));
-        const port = selectWaitForProcessTreePort(processes, parent, workingDir, expectedPort);
-        if (port !== null) {
-            return port;
+        const descendant = selectManagedNuxtProcess(
+            processes,
+            parent,
+            workingDir,
+            expectedPort
+        );
+        if (descendant?.port) {
+            const port = Number(descendant.port);
+            if (Number.isInteger(port) && port >= 1 && port <= 65535) {
+                return port;
+            }
         }
         try {
             process.kill(parentPid, 0);

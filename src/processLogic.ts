@@ -1,4 +1,5 @@
 import { NuxtProcess } from './types';
+import { isValidPort } from './validation';
 
 export interface ProcessTableEntry {
     pid: string;
@@ -127,7 +128,7 @@ export function selectWaitForProcessTreePort(
         return null;
     }
     const port = Number(descendant.port);
-    if (Number.isInteger(port) && port >= 1 && port <= 65535) {
+    if (isValidPort(port)) {
         return port;
     }
     return null;

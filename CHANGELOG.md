@@ -5,6 +5,15 @@ All notable changes to the "Nuxt Dev Server Manager" extension will be documente
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+- Workspace Trust now also gates kill-all, list-and-kill, and `maxExtraServers` auto-kill (start was already gated)
+- Declared `untrustedWorkspaces` limited support so Restricted Mode documents the disabled actions
+
+### Added
+- Unit tests for untrusted start messaging, invalid `devCommand`, `waitForProcessTreePort` selection, and SIGKILL identity refusal
+
 ## [0.0.6] - 2025-01-22
 
 Major update with performance, security, and automation improvements.

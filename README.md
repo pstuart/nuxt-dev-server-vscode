@@ -19,7 +19,7 @@ A Visual Studio Code extension to manage Nuxt development servers directly from 
 - **Auto-Kill Features** - Automatically kill servers after timeout or idle time
 - **Activity Tracking** - Monitors file changes to detect idle servers
 - **Configurable Settings** - Customize timeout, intervals, and behavior
-- **Security Hardened** - PID validation, safe JSON parsing, input sanitization
+- **Security Hardened** - PID validation, safe JSON parsing, input sanitization, Workspace Trust gates on start and process kills
 
 ## Usage
 
@@ -84,6 +84,19 @@ The extension shows comprehensive version information:
 - **Running**: Version for each active server (handles multiple projects)
 
 This helps identify version mismatches and ensures you know exactly which Nuxt version is running.
+
+## Restricted Mode / Workspace Trust
+
+This extension has **limited** support in VS Code Restricted Mode (`capabilities.untrustedWorkspaces`).
+
+Until you trust the folder:
+
+- **Start Dev Server** is refused (it would run `npm`/`yarn`/`pnpm`/`bun` from the workspace)
+- **Kill All** and **List and Kill** are refused (they send SIGTERM/SIGKILL to Nuxt PIDs)
+- **`maxExtraServers` auto-kill** does not terminate extra processes
+- Workspace overrides for `autoStartOnOpen`, `devCommand`, `maxExtraServers`, and the auto-kill timeouts are ignored
+
+Read-only actions (show instances, version, status bar) still work. Trust the folder to enable start and kill commands.
 
 ## Requirements
 

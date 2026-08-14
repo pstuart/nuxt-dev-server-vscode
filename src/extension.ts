@@ -12,6 +12,7 @@ import { COMMANDS, OUTPUT_CHANNELS } from './constants';
 import { getOrCreateOutputChannel, showInfo, showWarning, showError, debugLog, disposeAllOutputChannels, getConfig } from './utils';
 import { ProcessQuickPickItem } from './types';
 import { initializeAutoKill, cleanupAutoKill } from './autoKill';
+import { refuseIfUntrusted } from './workspaceTrust';
 
 /**
  * Extension activation
@@ -217,6 +218,10 @@ async function showAllInstances(): Promise<void> {
  * List and kill specific instances
  */
 async function listAndKillInstances(): Promise<void> {
+    if (await refuseIfUntrusted('listAndKill')) {
+        return;
+    }
+
     try {
         const processes = await getRunningNuxtProcesses();
 
@@ -285,6 +290,10 @@ async function listAndKillInstances(): Promise<void> {
  * Kill all Nuxt instances with confirmation
  */
 async function killAllNuxtInstancesWithConfirmation(): Promise<void> {
+    if (await refuseIfUntrusted('killAll')) {
+        return;
+    }
+
     try {
         const processes = await getRunningNuxtProcesses();
         const count = processes.length;

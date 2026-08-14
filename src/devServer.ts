@@ -23,26 +23,14 @@ import {
 import { onServerStart, onServerStop } from './autoKill';
 import { forceStatusBarUpdate } from './statusBar';
 import { isBinaryAvailable } from './platform';
+import { isValidDevCommand } from './processLogic';
+import { refuseIfUntrusted } from './workspaceTrust';
 import { isValidPort } from './validation';
 
 /**
  * Whitelist of allowed package managers
  */
 const ALLOWED_PACKAGE_MANAGERS: PackageManager[] = ['npm', 'yarn', 'pnpm', 'bun'];
-
-/**
- * Validate devCommand to prevent command injection
- * Only allows alphanumeric, dash, underscore, colon, and forward slash
- */
-function isValidDevCommand(command: string): boolean {
-    if (!command || typeof command !== 'string') {
-        return false;
-    }
-    // Allow npm script names: alphanumeric, dash, underscore, colon
-    // This prevents injection like "dev; rm -rf /" or "dev && malicious"
-    const validPattern = /^[a-zA-Z0-9_:-]+$/;
-    return validPattern.test(command) && command.length < 100;
-}
 
 /**
  * Validate package manager is in whitelist
@@ -204,10 +192,7 @@ export async function startDevServer(): Promise<boolean> {
 
 async function startDevServerInternal(): Promise<boolean> {
     // Workspace Trust: spawning package-manager scripts executes local package.json.
-    // Refuse in untrusted workspaces so untrusted folders cannot run npm/yarn/pnpm/bun.
-    if (!vscode.workspace.isTrusted) {
-        await showError('Cannot start Nuxt dev server in an untrusted workspace. Trust the folder first.');
-        debugLog('startDevServer blocked: workspace is not trusted');
+    if (await refuseIfUntrusted('start')) {
         return false;
     }
 

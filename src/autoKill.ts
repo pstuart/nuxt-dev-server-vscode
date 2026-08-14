@@ -3,6 +3,7 @@ import { getManagedServer, stopDevServer, isManagedServerRunning } from './devSe
 import { getRunningNuxtProcesses, killProcess } from './processManager';
 import { debugLog, getConfig, showWarning, showInfo, expandPath } from './utils';
 import { selectExtraNuxtProcesses } from './processLogic';
+import { isDestructiveAutoKillAllowed, refuseIfUntrusted } from './workspaceTrust';
 
 /**
  * Auto-kill state tracking
@@ -24,6 +25,7 @@ const autoKillState: AutoKillState = {
 /** Rate-limit enableAutoCleanup user warnings (check interval is 30s). */
 const AUTO_CLEANUP_WARN_INTERVAL_MS = 5 * 60 * 1000;
 let lastAutoCleanupWarnAt = 0;
+let warnedUntrustedAutoKill = false;
 
 /**
  * Update activity timestamp when files change
@@ -130,22 +132,30 @@ export async function checkAutoKillConditions(): Promise<void> {
 
                 // Only act if we have more workspace processes than the limit
                 if (extraProcesses.length > maxExtraServers) {
-                    const toKill = extraProcesses
-                        .filter(p => !isNaN(parseInt(p.pid, 10)) && parseInt(p.pid, 10) > 0)
-                        .sort((a, b) => parseInt(a.pid, 10) - parseInt(b.pid, 10)) // Sort by PID (lower = older)
-                        .slice(0, extraProcesses.length - maxExtraServers);
-
-                    debugLog(`Killing ${toKill.length} extra servers due to maxExtraServers limit`);
-
-                    await Promise.all(toKill.map(async proc => {
-                        try {
-                            await killProcess(proc.pid);
-                            await showInfo(`Auto-killed extra server (PID ${proc.pid}) due to maxExtraServers limit`);
-                            debugLog(`Auto-killed extra server PID ${proc.pid}`);
-                        } catch (error) {
-                            debugLog(`Failed to kill extra server ${proc.pid}:`, error);
+                    if (!isDestructiveAutoKillAllowed()) {
+                        debugLog('maxExtraServers kill skipped: workspace is not trusted');
+                        if (!warnedUntrustedAutoKill) {
+                            warnedUntrustedAutoKill = true;
+                            await refuseIfUntrusted('autoKillExtras');
                         }
-                    }));
+                    } else {
+                        const toKill = extraProcesses
+                            .filter(p => !isNaN(parseInt(p.pid, 10)) && parseInt(p.pid, 10) > 0)
+                            .sort((a, b) => parseInt(a.pid, 10) - parseInt(b.pid, 10))
+                            .slice(0, extraProcesses.length - maxExtraServers);
+
+                        debugLog(`Killing ${toKill.length} extra servers due to maxExtraServers limit`);
+
+                        await Promise.all(toKill.map(async proc => {
+                            try {
+                                await killProcess(proc.pid);
+                                await showInfo(`Auto-killed extra server (PID ${proc.pid}) due to maxExtraServers limit`);
+                                debugLog(`Auto-killed extra server PID ${proc.pid}`);
+                            } catch (error) {
+                                debugLog(`Failed to kill extra server ${proc.pid}:`, error);
+                            }
+                        }));
+                    }
                 }
             }
         }

@@ -8,7 +8,7 @@ import {
     getProcessCommand,
     killChildProcesses
 } from './platform';
-import { selectManagedNuxtProcess } from './processLogic';
+import { selectWaitForProcessTreePort, shouldRefuseSigkillEscalation } from './processLogic';
 import { isValidPort } from './validation';
 
 /**
@@ -175,7 +175,7 @@ export async function killProcess(pid: string): Promise<void> {
         }
 
         const currentCommand = await getProcessCommand(numPid);
-        if (!originalCommand || currentCommand !== originalCommand) {
+        if (shouldRefuseSigkillEscalation(originalCommand, currentCommand)) {
             throw new Error(`PID ${numPid} changed identity before SIGKILL; refusing escalation`);
         }
         debugLog(`Process ${numPid} still alive after ${gracefulTimeoutMs}ms, sending SIGKILL`);
@@ -312,17 +312,9 @@ export async function waitForProcessTreePort(
             ...proc,
             workingDir: expandPath(proc.workingDir),
         }));
-        const descendant = selectManagedNuxtProcess(
-            processes,
-            parent,
-            workingDir,
-            expectedPort
-        );
-        if (descendant?.port) {
-            const port = Number(descendant.port);
-            if (isValidPort(port)) {
-                return port;
-            }
+        const port = selectWaitForProcessTreePort(processes, parent, workingDir, expectedPort);
+        if (port !== null) {
+            return port;
         }
         try {
             process.kill(parentPid, 0);

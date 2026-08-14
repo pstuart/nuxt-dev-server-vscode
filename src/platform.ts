@@ -1,6 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { sanitizePid, debugLog, getErrorMessage } from './utils';
+import { isSafeBinaryName } from './processLogic';
 import {
     ancestorPids,
     matchesNuxtDevPreview,
@@ -23,8 +24,6 @@ export interface ProcessEntry {
     command: string;
     ancestorPids: string[];
 }
-
-const BINARY_NAME_RE = /^[a-zA-Z0-9_-]+$/;
 
 /** Run PowerShell with a single -Command argv (no cmd.exe reparse of the script). */
 async function runPowerShell(script: string): Promise<string> {
@@ -241,7 +240,7 @@ export async function killChildProcesses(parentPid: number): Promise<void> {
  * Check if a binary is available on PATH. Name must match /^[a-zA-Z0-9_-]+$/.
  */
 export async function isBinaryAvailable(binary: string): Promise<boolean> {
-    if (!BINARY_NAME_RE.test(binary)) {
+    if (!isSafeBinaryName(binary)) {
         debugLog(`Rejected invalid binary name: ${binary}`);
         return false;
     }

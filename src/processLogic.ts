@@ -112,3 +112,49 @@ export function selectManagedNuxtProcess(
     );
     return descendants.find(proc => proc.port === expectedPort.toString()) ?? descendants[0];
 }
+
+/**
+ * Port chosen by waitForProcessTreePort: managed descendant, then 1–65535.
+ */
+export function selectWaitForProcessTreePort(
+    processes: ReadonlyArray<NuxtProcess>,
+    wrapperPid: string,
+    workingDir: string,
+    expectedPort: number
+): number | null {
+    const descendant = selectManagedNuxtProcess(processes, wrapperPid, workingDir, expectedPort);
+    if (!descendant?.port) {
+        return null;
+    }
+    const port = Number(descendant.port);
+    if (Number.isInteger(port) && port >= 1 && port <= 65535) {
+        return port;
+    }
+    return null;
+}
+
+/** npm script names only — blocks `dev; rm -rf /` style injection. */
+export function isValidDevCommand(command: string): boolean {
+    if (!command || typeof command !== 'string') {
+        return false;
+    }
+    return /^[a-zA-Z0-9_:-]+$/.test(command) && command.length < 100;
+}
+
+/**
+ * After SIGTERM times out, refuse SIGKILL if the PID was reused or the
+ * command line disappeared (process already gone / identity changed).
+ */
+export function shouldRefuseSigkillEscalation(
+    originalCommand: string | undefined,
+    currentCommand: string | undefined
+): boolean {
+    return !originalCommand || currentCommand !== originalCommand;
+}
+
+const BINARY_NAME_RE = /^[a-zA-Z0-9_-]+$/;
+
+/** Names passed to `which` / `where.exe` via execFile argv. */
+export function isSafeBinaryName(binary: string): boolean {
+    return BINARY_NAME_RE.test(binary);
+}

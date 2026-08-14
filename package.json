@@ -24,8 +24,23 @@
     "vue",
     "dev server",
     "development",
-    "nuxt3"
+    "nuxt3",
+    "nuxt4"
   ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": "limited",
+      "description": "Starting the Nuxt dev server, kill-all, list-and-kill, and auto-kill of extra servers are disabled in Restricted Mode until you trust the folder.",
+      "restrictedConfigurations": [
+        "nuxt-dev-server.autoStartOnOpen",
+        "nuxt-dev-server.devCommand",
+        "nuxt-dev-server.maxExtraServers",
+        "nuxt-dev-server.autoKillTimeout",
+        "nuxt-dev-server.autoKillIdleTime",
+        "nuxt-dev-server.preferredPackageManager"
+      ]
+    }
+  },
   "activationEvents": [
     "workspaceContains:**/nuxt.config.{js,ts,mjs,mts}"
   ],
@@ -34,7 +49,8 @@
     "commands": [
       {
         "command": "nuxt-dev-server.start",
-        "title": "Nuxt: Start Dev Server"
+        "title": "Nuxt: Start Dev Server",
+        "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "nuxt-dev-server.stop",
@@ -50,11 +66,13 @@
       },
       {
         "command": "nuxt-dev-server.killAll",
-        "title": "Nuxt: Kill All Running Instances"
+        "title": "Nuxt: Kill All Running Instances",
+        "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "nuxt-dev-server.listAndKill",
-        "title": "Nuxt: List and Kill Instances"
+        "title": "Nuxt: List and Kill Instances",
+        "enablement": "isWorkspaceTrusted"
       },
       {
         "command": "nuxt-dev-server.openBrowser",

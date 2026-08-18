@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { spawn } from 'child_process';
+import { ChildProcess, spawn } from 'child_process';
 import * as path from 'path';
 import { ManagedServer, PackageManager } from './types';
 import { LOCK_FILES, NUXT_CONFIG_FILES, OUTPUT_CHANNELS, DEFAULT_CONFIG, PROCESS_PATTERNS } from './constants';
@@ -70,6 +70,10 @@ async function isPackageManagerAvailable(manager: PackageManager): Promise<boole
  */
 let managedServer: ManagedServer | null = null;
 
+function childHandleExited(child: ChildProcess): boolean {
+    return child.exitCode !== null || child.signalCode !== null;
+}
+
 /**
  * Re-entrancy guard for startDevServer. `managedServer` is only assigned after the
  * async pre-flight + spawn, so without this two rapid start invocations could both
@@ -88,7 +92,10 @@ export function getManagedServer(): ManagedServer | null {
  * Check if a managed server is running
  */
 export function isManagedServerRunning(): boolean {
-    return managedServer !== null && !managedServer.process.killed;
+    if (!managedServer) {
+        return false;
+    }
+    return !childHandleExited(managedServer.process) && !managedServer.process.killed;
 }
 
 /**
@@ -97,6 +104,7 @@ export function isManagedServerRunning(): boolean {
  */
 export function clearManagedServer(): void {
     managedServer = null;
+    onServerStop();
     forceStatusBarUpdate();
 }
 
@@ -383,7 +391,7 @@ async function startDevServerInternal(): Promise<boolean> {
         return true;
     } else if (childProcess.exitCode !== null || childProcess.signalCode !== null) {
         // The process exited before it ever listened (e.g. no `dev` script, a
-        // bad nuxt.config, an immediate crash). waitForProcessPort collapses
+        // bad nuxt.config, an immediate crash). waitForProcessTreePort collapses
         // "died" and "slow start" into null; only the dead case is a failure —
         // surface it instead of silently reporting success.
         debugLog('Server process exited before listening');
@@ -416,6 +424,8 @@ export async function stopDevServer(): Promise<boolean> {
 
     if (!pid) {
         managedServer = null;
+        onServerStop();
+        forceStatusBarUpdate();
         return false;
     }
 
@@ -431,17 +441,18 @@ export async function stopDevServer(): Promise<boolean> {
         // Approach 2: Kill the process tree
         await killProcessTree(String(pid));
 
-        // Wait for process to actually die
-        const terminated = await verifyProcessTerminated(String(pid), DEFAULT_CONFIG.STOP_CLEANUP_WAIT_MS);
+        const handleDead = childHandleExited(managedServer.process);
+        const terminated = handleDead
+            || await verifyProcessTerminated(String(pid), DEFAULT_CONFIG.STOP_CLEANUP_WAIT_MS);
 
         if (!terminated) {
-            debugLog(`Warning: Process ${pid} may not have terminated cleanly`);
+            debugLog(`Process ${pid} did not terminate`);
+            await showError('Dev server did not terminate; not reporting a successful stop');
+            return false;
         }
 
         managedServer = null;
         forceStatusBarUpdate();
-
-        // Notify auto-kill module that server has stopped
         onServerStop();
 
         await showInfo('Dev server stopped');
@@ -466,13 +477,15 @@ export async function restartDevServer(): Promise<boolean> {
     await showInfo('Restarting dev server...');
     debugLog('Restarting dev server');
 
-    // Stop the server and wait
-    await stopDevServer();
+    if (isManagedServerRunning()) {
+        const stopped = await stopDevServer();
+        if (!stopped || isManagedServerRunning()) {
+            await showError('Could not stop the running server; restart aborted to avoid a second instance');
+            return false;
+        }
+        await sleep(DEFAULT_CONFIG.RESTART_DELAY_MS);
+    }
 
-    // Wait for cleanup
-    await sleep(DEFAULT_CONFIG.RESTART_DELAY_MS);
-
-    // Start the server
     return await startDevServer();
 }
 
@@ -480,14 +493,22 @@ export async function restartDevServer(): Promise<boolean> {
  * Cleanup on extension deactivation
  */
 export async function cleanupManagedServer(): Promise<void> {
-    if (managedServer?.process.pid) {
-        debugLog('Cleaning up managed server on deactivation');
-        try {
-            await killProcessTree(String(managedServer.process.pid));
-        } catch (error) {
-            // Best effort cleanup
-            debugLog('Error during cleanup:', getErrorMessage(error));
+    if (!managedServer) {
+        return;
+    }
+
+    const pid = managedServer.process.pid;
+    const workingDir = managedServer.workingDir;
+    debugLog('Cleaning up managed server on deactivation');
+    try {
+        if (workingDir) {
+            await killProcessesByWorkingDir(workingDir);
         }
+        if (pid) {
+            await killProcessTree(String(pid));
+        }
+    } catch (error) {
+        debugLog('Error during cleanup:', getErrorMessage(error));
     }
     managedServer = null;
 }

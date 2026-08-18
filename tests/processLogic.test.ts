@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import {
     ancestorPids,
+    collectDescendantPids,
+    inferWorkingDirFromCommand,
+    isManagedNuxtProcess,
+    isProcessGoneError,
     isValidDevCommand,
     matchesNuxtDevPreview,
     parseUnixProcessTable,
+    parseWindowsProcessJsonLines,
     selectExtraNuxtProcesses,
     selectManagedNuxtProcess,
     selectPreferredNuxtPort,
@@ -18,6 +23,9 @@ describe('matchesNuxtDevPreview', () => {
         '/usr/bin/node /workspace/node_modules/.bin/nuxt dev',
         'node "/workspace with spaces/node_modules/.bin/nuxt" preview',
         'node C:\\workspace\\node_modules\\.bin\\nuxt dev',
+        'node C:\\workspace\\node_modules\\.bin\\nuxt.cmd dev',
+        'node /workspace/node_modules/.bin/nuxi preview',
+        'nuxi dev',
     ])('accepts an exact Nuxt executable and command: %s', command => {
         expect(matchesNuxtDevPreview(command)).toBe(true);
     });
@@ -216,6 +224,88 @@ describe('waitForProcessTreePort selection', () => {
             '/workspace',
             70000
         )).toBeNull();
+    });
+});
+
+describe('isManagedNuxtProcess', () => {
+    it('matches the wrapper PID and any listening descendant', () => {
+        expect(isManagedNuxtProcess({ pid: '100', ancestorPids: [] }, '100')).toBe(true);
+        expect(isManagedNuxtProcess({ pid: '102', ancestorPids: ['101', '100'] }, '100')).toBe(true);
+        expect(isManagedNuxtProcess({ pid: '200', ancestorPids: [] }, '100')).toBe(false);
+        expect(isManagedNuxtProcess({ pid: '102', ancestorPids: ['101', '100'] })).toBe(false);
+    });
+});
+
+describe('collectDescendantPids', () => {
+    const table = parseUnixProcessTable(`
+      10     1 npm run dev
+      11    10 sh -c nuxt dev
+      12    11 node /workspace/node_modules/.bin/nuxt dev
+      20     1 unrelated
+    `);
+
+    it('returns grandchildren before children (deepest first)', () => {
+        expect(collectDescendantPids('10', table)).toEqual(['12', '11']);
+    });
+
+    it('returns an empty list when the parent has no children', () => {
+        expect(collectDescendantPids('20', table)).toEqual([]);
+    });
+
+    it('does not loop when the process table contains a cycle', () => {
+        expect(collectDescendantPids('1', [
+            { pid: '1', parentPid: '2', command: 'a' },
+            { pid: '2', parentPid: '1', command: 'b' },
+        ])).toEqual(['1', '2']);
+    });
+});
+
+describe('inferWorkingDirFromCommand', () => {
+    it('reads the project root from a node_modules Nuxt CLI path', () => {
+        expect(inferWorkingDirFromCommand(
+            'node /workspace/node_modules/.bin/nuxt dev'
+        )).toBe('/workspace');
+        expect(inferWorkingDirFromCommand(
+            'node "/workspace with spaces/node_modules/.bin/nuxt" preview'
+        )).toBe('/workspace with spaces');
+        expect(inferWorkingDirFromCommand(
+            'node C:\\workspace\\node_modules\\.bin\\nuxt.cmd dev'
+        )).toBe('C:\\workspace');
+        expect(inferWorkingDirFromCommand(
+            'node /workspace/node_modules/nuxt/bin/nuxt.mjs dev'
+        )).toBe('/workspace');
+        expect(inferWorkingDirFromCommand(
+            'node /workspace/node_modules/.bin/nuxi dev'
+        )).toBe('/workspace');
+    });
+
+    it('returns undefined when the command has no Nuxt CLI path', () => {
+        expect(inferWorkingDirFromCommand('node /tmp/script.js --message "nuxt dev"')).toBeUndefined();
+    });
+});
+
+describe('parseWindowsProcessJsonLines', () => {
+    it('parses compressed CIM JSON lines and skips junk', () => {
+        const stdout = [
+            'Get-CimInstance warning',
+            '{"pid":10,"parentPid":1,"command":"npm run dev"}',
+            'not-json',
+            '{"pid":12,"parentPid":10,"command":"node C:\\\\workspace\\\\node_modules\\\\.bin\\\\nuxt dev"}',
+        ].join('\r\n');
+
+        expect(parseWindowsProcessJsonLines(stdout)).toEqual([
+            { pid: '10', parentPid: '1', command: 'npm run dev' },
+            { pid: '12', parentPid: '10', command: 'node C:\\workspace\\node_modules\\.bin\\nuxt dev' },
+        ]);
+    });
+});
+
+describe('isProcessGoneError', () => {
+    it('accepts Node ESRCH and rejects other failures', () => {
+        expect(isProcessGoneError(Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' }))).toBe(true);
+        expect(isProcessGoneError(Object.assign(new Error('EPERM'), { code: 'EPERM' }))).toBe(false);
+        expect(isProcessGoneError(new Error('ESRCH'))).toBe(false);
+        expect(isProcessGoneError('ESRCH')).toBe(false);
     });
 });
 

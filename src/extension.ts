@@ -13,6 +13,7 @@ import { getOrCreateOutputChannel, showInfo, showWarning, showError, debugLog, d
 import { ProcessQuickPickItem } from './types';
 import { initializeAutoKill, cleanupAutoKill } from './autoKill';
 import { refuseIfUntrusted } from './workspaceTrust';
+import { isManagedNuxtProcess } from './processLogic';
 
 /**
  * Extension activation
@@ -258,22 +259,33 @@ async function listAndKillInstances(): Promise<void> {
         }
 
         const managedServer = getManagedServer();
+        const managedPid = managedServer?.process.pid?.toString();
 
         let killedCount = 0;
+        let killedManaged = false;
         for (const item of selected) {
             try {
-                await killProcess(item.process.pid);
-
-                // If this was our managed server, clear the reference
-                if (managedServer && managedServer.process.pid?.toString() === item.process.pid) {
-                    clearManagedServer();
+                if (isManagedNuxtProcess(item.process, managedPid)) {
+                    killedManaged = true;
                 }
-
+                await killProcess(item.process.pid);
                 killedCount++;
             } catch (error) {
                 const message = error instanceof Error ? error.message : String(error);
                 await showError(`Failed to kill PID ${item.process.pid}: ${message}`);
             }
+        }
+
+        if (killedManaged && managedPid) {
+            const wrapperAlreadySelected = selected.some(item => item.process.pid === managedPid);
+            if (!wrapperAlreadySelected) {
+                try {
+                    await killProcess(managedPid);
+                } catch (error) {
+                    debugLog('Failed to kill managed wrapper after descendant kill:', error);
+                }
+            }
+            clearManagedServer();
         }
 
         await showInfo(`Killed ${killedCount} of ${selected.length} instance(s)`);

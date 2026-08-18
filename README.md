@@ -211,7 +211,7 @@ For specialized setups:
 
 - Port detection may not work for all configurations
 - Working directory detection may require additional permissions on some platforms
-- On Windows, working directory detection for processes owned by other users may return "Unknown"
+- On Windows, cwd is inferred from the Nuxt CLI path in the command line when Win32 does not expose WorkingDirectory
 - Process detection relies on system tools (ps/lsof on macOS/Linux, PowerShell on Windows)
 
 ## Installation
@@ -266,7 +266,7 @@ See [PUBLISHING.md](PUBLISHING.md) for detailed instructions on:
 
 ### 0.0.8 (Latest)
 
-Refactored into multi-file architecture for maintainability. See CHANGELOG.md for full history.
+Restricted Mode / Workspace Trust gates start, kill-all, list-and-kill, and extra-server auto-kill. See CHANGELOG.md for full history.
 
 ### 0.0.6
 

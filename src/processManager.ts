@@ -3,12 +3,18 @@ import { DEFAULT_CONFIG } from './constants';
 import { formatPathForDisplay, sanitizePid, debugLog, getErrorMessage, expandPath, sleep, showWarning, getConfig } from './utils';
 import {
     listNuxtProcesses,
+    listProcessTable,
     getProcessPort,
     getProcessWorkingDir,
     getProcessCommand,
-    killChildProcesses
 } from './platform';
-import { selectWaitForProcessTreePort, shouldRefuseSigkillEscalation } from './processLogic';
+import {
+    collectDescendantPids,
+    inferWorkingDirFromCommand,
+    isProcessGoneError,
+    selectWaitForProcessTreePort,
+    shouldRefuseSigkillEscalation,
+} from './processLogic';
 import { isValidPort } from './validation';
 
 /**
@@ -78,20 +84,22 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
                 continue;
             }
 
-            // Get working directory
-            let workingDir = workingDirCache.get(pid)?.command === fullCommand
-                ? workingDirCache.get(pid)?.workingDir ?? 'Unknown'
-                : 'Unknown';
+            // Prefer the project path from the Nuxt CLI token. Windows has no
+            // reliable Win32 cwd; Unix lsof can also return Unknown.
+            let workingDir = inferWorkingDirFromCommand(fullCommand)
+                ?? (workingDirCache.get(pid)?.command === fullCommand
+                    ? workingDirCache.get(pid)?.workingDir ?? 'Unknown'
+                    : 'Unknown');
             if (workingDir === 'Unknown') {
                 try {
                     const sanitizedPid = sanitizePid(pid);
                     workingDir = await getProcessWorkingDir(sanitizedPid);
-                    if (workingDir !== 'Unknown') {
-                        workingDirCache.set(pid, { command: fullCommand, workingDir });
-                    }
-                } catch (error) {
+                } catch {
                     debugLog(`Could not get working directory for ${pid}`);
                 }
+            }
+            if (workingDir !== 'Unknown') {
+                workingDirCache.set(pid, { command: fullCommand, workingDir });
             }
 
             processMap.set(pid, {
@@ -153,15 +161,16 @@ export async function killProcess(pid: string): Promise<void> {
 
     try {
         const originalCommand = await getProcessCommand(numPid);
-        // Try graceful kill first
-        process.kill(numPid, 'SIGTERM');
+        try {
+            process.kill(numPid, 'SIGTERM');
+        } catch (error) {
+            if (isProcessGoneError(error)) {
+                debugLog(`Process ${numPid} already gone`);
+                return;
+            }
+            throw error;
+        }
 
-        // Wait for graceful shutdown — respects the user's
-        // `nuxt-dev-server.gracefulShutdownTimeout` setting (default 5000ms,
-        // bounded 1000-30000 by package.json contributes.configuration).
-        // Until this scan, the config value was read by getConfig() but no
-        // caller actually used it; the SIGTERM-to-SIGKILL gap was hardcoded
-        // to 500ms regardless of what the user set.
         const gracefulTimeoutMs = getConfig().gracefulShutdownTimeout;
         const deadline = Date.now() + gracefulTimeoutMs;
         while (Date.now() < deadline) {
@@ -179,7 +188,14 @@ export async function killProcess(pid: string): Promise<void> {
             throw new Error(`PID ${numPid} changed identity before SIGKILL; refusing escalation`);
         }
         debugLog(`Process ${numPid} still alive after ${gracefulTimeoutMs}ms, sending SIGKILL`);
-        process.kill(numPid, 'SIGKILL');
+        try {
+            process.kill(numPid, 'SIGKILL');
+        } catch (error) {
+            if (isProcessGoneError(error)) {
+                return;
+            }
+            throw error;
+        }
     } catch (error) {
         debugLog(`Error killing process ${numPid}:`, getErrorMessage(error));
         throw new Error(
@@ -190,16 +206,26 @@ export async function killProcess(pid: string): Promise<void> {
 }
 
 /**
- * Kill all child processes of a parent PID
+ * Kill descendants (deepest first) then the parent. Uses the process table
+ * so grandchildren of `npm run dev` are not left behind after `pkill -P`.
  */
 export async function killProcessTree(parentPid: string): Promise<void> {
     const numPid = sanitizePid(parentPid);
     debugLog(`Killing process tree for ${numPid}`);
 
-    // Kill all descendants recursively using platform abstraction
-    await killChildProcesses(numPid);
+    try {
+        const table = await listProcessTable();
+        const descendants = collectDescendantPids(String(numPid), table);
+        const results = await Promise.allSettled(descendants.map(pid => killProcess(pid)));
+        results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+                debugLog(`Failed to kill descendant ${descendants[index]}:`, getErrorMessage(result.reason));
+            }
+        });
+    } catch (error) {
+        debugLog(`Could not enumerate descendants of ${numPid}:`, getErrorMessage(error));
+    }
 
-    // Kill the parent
     await killProcess(parentPid);
 }
 
@@ -250,51 +276,6 @@ export async function killProcessesByWorkingDir(workingDir: string): Promise<num
         }
     });
     return results.filter(result => result.status === 'fulfilled').length;
-}
-
-/**
- * Wait for a process to start listening on a port
- * Returns the port number when detected, or null if timeout
- */
-export async function waitForProcessPort(
-    pid: number,
-    timeoutMs: number = DEFAULT_CONFIG.SERVER_START_TIMEOUT_MS
-): Promise<number | null> {
-    debugLog(`Waiting for process ${pid} to listen on a port (timeout: ${timeoutMs}ms)`);
-
-    const startTime = Date.now();
-    const checkInterval = 500;
-
-    while (Date.now() - startTime < timeoutMs) {
-        try {
-            const safePid = sanitizePid(String(pid));
-            const port = await getProcessPort(safePid);
-            if (port) {
-                const parsedPort = parseInt(port, 10);
-                // Validate port is within valid TCP range before treating as listener
-                if (isValidPort(parsedPort)) {
-                    debugLog(`Process ${pid} is listening on port ${parsedPort}`);
-                    return parsedPort;
-                }
-                debugLog(`Ignoring out-of-range port for pid ${pid}: ${parsedPort}`);
-            }
-        } catch (error) {
-            // Not listening yet
-        }
-
-        // Check if process is still alive
-        try {
-            process.kill(pid, 0);
-        } catch (error) {
-            debugLog(`Process ${pid} died while waiting for port`);
-            return null;
-        }
-
-        await sleep(checkInterval);
-    }
-
-    debugLog(`Timeout waiting for process ${pid} to listen on port`);
-    return null;
 }
 
 /** Wait for a listening Nuxt descendant of a package-manager wrapper. */

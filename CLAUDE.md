@@ -56,24 +56,27 @@ The extension is organized into focused modules under `src/`:
 | `extension.ts` | Entry point, command registration, activation/deactivation |
 | `devServer.ts` | Start/stop/restart dev server process management |
 | `processManager.ts` | Detect and kill running Nuxt processes system-wide |
+| `processLogic.ts` | Pure process matching, ancestry, port pick, and kill-identity helpers |
 | `statusBar.ts` | VS Code status bar initialization and updates |
 | `versionDetector.ts` | Read declared/installed/running Nuxt versions |
 | `autoKill.ts` | Auto-kill by timeout or idle time logic |
 | `platform.ts` | Cross-platform abstraction for process discovery, port detection, working directory, and process tree killing |
+| `workspaceTrust.ts` / `workspaceTrustLogic.ts` | Restricted Mode gates for start and destructive kills |
+| `validation.ts` | PID and TCP port parsers |
 | `types.ts` | Shared TypeScript type definitions |
 | `constants.ts` | Shared constants (intervals, commands, etc.) |
 | `utils.ts` | Shared utility functions |
 
 ### Core State Management
-The extension maintains three critical pieces of global state:
-- `devServerProcess`: The managed ChildProcess for the user's dev server
-- `devServerWorkingDir`: Working directory of the managed server (used for cleanup)
+The extension maintains these pieces of global state:
+- `managedServer`: The `ManagedServer` handle (wrapper `ChildProcess`, working dir, port, URL)
+- `startingServer`: Re-entrancy guard so two starts cannot spawn overlapping servers
 - `statusBarItem`: The VS Code status bar item showing server status
 ### Process Detection Strategy
 
 The extension uses a **port-based detection** approach to accurately count running Nuxt instances:
 
-1. **Discovery**: Find node processes with "nuxt" and "dev" or "preview" via platform-specific commands (`ps` on macOS/Linux, PowerShell on Windows)
+1. **Discovery**: Find processes whose argv has a `nuxt` or `nuxi` token followed by `dev` or `preview` (`ps` on macOS/Linux, PowerShell on Windows)
 2. **Verification**: For each process, check if it's listening on a port using platform-specific commands (`lsof` on macOS/Linux, `Get-NetTCPConnection` on Windows)
 3. **Filtering**: Only count processes with listening ports (actual servers, not build scripts)
 4. **Deduplication**: Use a Map keyed by PID to avoid counting duplicate/child processes
@@ -91,9 +94,9 @@ This approach prevents false positives from counting build processes or child pr
 **Stopping a server** (src/devServer.ts):
 Uses a two-pronged approach to ensure complete cleanup:
 1. **Working directory matching**: Find all Nuxt processes in the same working directory and kill them
-2. **Process tree cleanup**: Kill all child processes (platform-specific) then the parent shell
+2. **Process tree cleanup**: Recursively kill descendants from the pid/ppid snapshot, then the parent wrapper
 
-Individual process kills are graceful: SIGTERM first, then SIGKILL after `gracefulShutdownTimeout` (default 5000ms) if the process is still alive (src/processManager.ts).
+Individual process kills are graceful: SIGTERM first, then SIGKILL after `gracefulShutdownTimeout` (default 5000ms) if the process is still alive and the command line is unchanged (src/processManager.ts). `ESRCH` is treated as already gone.
 
 This dual approach handles cases where the spawned shell has child processes.
 
@@ -128,8 +131,8 @@ const portMatch = output.match(/http:\/\/localhost:(\d+)/);
 
 ### Process Cleanup on Deactivation
 When the extension deactivates (src/extension.ts), it attempts to clean up by:
-1. Killing all child processes of the managed server
-2. Sending SIGKILL to the main process
+1. Killing Nuxt processes in the managed working directory
+2. Recursively killing the managed wrapper's descendants, then the wrapper
 3. Using best-effort error handling (catches and ignores errors)
 
 ### Multi-Instance Commands

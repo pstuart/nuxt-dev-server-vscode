@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- List-and-kill now treats listening descendants of the package-manager wrapper as the managed server, kills the wrapper, and clears managed state
+- Process-tree stop walks the full pid/ppid snapshot (no more `pkill -9 -P` / force-kill of direct children only); deactivate also sweeps the working directory
+- `stop` treats a missing PID (`ESRCH`) as already gone, and refuses to report success if the wrapper is still alive
+- Restart aborts instead of spawning a second instance when stop fails
+- Working directory is inferred from the Nuxt CLI path in the command line, so Windows no longer uses `node.exe`'s folder for port wait, stop, and extra-server scope
+
+### Changed
+- Process matching also accepts `nuxi dev` / `nuxi preview` (and Windows `.cmd` binaries)
+
+## [0.0.8] - 2026-08-14
+
 ### Security
 - Workspace Trust now also gates kill-all, list-and-kill, and `maxExtraServers` auto-kill (start was already gated)
 - Declared `untrustedWorkspaces` limited support so Restricted Mode documents the disabled actions

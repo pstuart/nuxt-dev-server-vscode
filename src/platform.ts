@@ -1,11 +1,12 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { sanitizePid, debugLog, getErrorMessage } from './utils';
-import { isSafeBinaryName } from './processLogic';
 import {
     ancestorPids,
+    isSafeBinaryName,
     matchesNuxtDevPreview,
     parseUnixProcessTable,
+    parseWindowsProcessJsonLines,
     ProcessTableEntry,
     selectPreferredNuxtPort,
 } from './processLogic';
@@ -35,10 +36,8 @@ async function runPowerShell(script: string): Promise<string> {
     return stdout;
 }
 
-/**
- * List node processes whose command line matches the Nuxt dev/preview pattern.
- */
-export async function listNuxtProcesses(): Promise<ProcessEntry[]> {
+/** Full pid/ppid/command snapshot used for ancestry and recursive tree kill. */
+export async function listProcessTable(): Promise<ProcessTableEntry[]> {
     if (process.platform === 'win32') {
         // Include every process so JS can reconstruct ancestry before filtering.
         const script = [
@@ -51,67 +50,44 @@ export async function listNuxtProcesses(): Promise<ProcessEntry[]> {
         try {
             const stdout = await runPowerShell(script);
             if (!stdout.trim()) {
-                debugLog('No Nuxt processes found (Windows empty output)');
+                debugLog('No processes found (Windows empty output)');
                 return [];
             }
-            const table: ProcessTableEntry[] = [];
-            for (const line of stdout.split(/\r?\n/)) {
-                const trimmed = line.trim();
-                if (!trimmed?.startsWith('{')) {
-                    continue;
-                }
-                try {
-                    const obj = JSON.parse(trimmed) as {
-                        pid?: number | string;
-                        parentPid?: number | string;
-                        command?: string;
-                    };
-                    if (obj.pid !== undefined && obj.parentPid !== undefined && obj.command) {
-                        table.push({
-                            pid: String(obj.pid),
-                            parentPid: String(obj.parentPid),
-                            command: String(obj.command),
-                        });
-                    }
-                } catch {
-                    // skip malformed line
-                }
-            }
-            return table
-                .filter(entry => matchesNuxtDevPreview(entry.command))
-                .map(entry => ({
-                    pid: entry.pid,
-                    command: entry.command,
-                    ancestorPids: ancestorPids(entry.pid, table),
-                }));
+            return parseWindowsProcessJsonLines(stdout);
         } catch (error) {
             debugLog('Windows process list failed:', getErrorMessage(error));
             return [];
         }
     }
 
-    // macOS / Linux: parse `ps` in JS (no shell pipeline)
     try {
         const { stdout } = await execFileAsync('ps', ['-eo', 'pid=,ppid=,command='], {
             maxBuffer: 10 * 1024 * 1024,
             encoding: 'utf8',
         });
-        const table = parseUnixProcessTable(stdout);
-        const entries = table
-            .filter(entry => matchesNuxtDevPreview(entry.command))
-            .map(entry => ({
-                pid: entry.pid,
-                command: entry.command,
-                ancestorPids: ancestorPids(entry.pid, table),
-            }));
-        if (entries.length === 0) {
-            debugLog('No Nuxt processes found (ps filter empty)');
-        }
-        return entries;
+        return parseUnixProcessTable(stdout);
     } catch (error) {
         debugLog('Unix process list failed:', getErrorMessage(error));
         throw error;
     }
+}
+
+/**
+ * List node processes whose command line matches the Nuxt dev/preview pattern.
+ */
+export async function listNuxtProcesses(): Promise<ProcessEntry[]> {
+    const table = await listProcessTable();
+    const entries = table
+        .filter(entry => matchesNuxtDevPreview(entry.command))
+        .map(entry => ({
+            pid: entry.pid,
+            command: entry.command,
+            ancestorPids: ancestorPids(entry.pid, table),
+        }));
+    if (entries.length === 0) {
+        debugLog('No Nuxt processes found');
+    }
+    return entries;
 }
 
 /**
@@ -208,31 +184,6 @@ export async function getProcessWorkingDir(pid: number): Promise<string> {
         return 'Unknown';
     } catch {
         return 'Unknown';
-    }
-}
-
-/**
- * Kill all child processes of a parent PID.
- */
-export async function killChildProcesses(parentPid: number): Promise<void> {
-    const safePid = sanitizePid(String(parentPid));
-
-    if (process.platform === 'win32') {
-        const script =
-            `Get-CimInstance Win32_Process -Filter "ParentProcessId = ${safePid}" -ErrorAction SilentlyContinue | ` +
-            `ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }`;
-        try {
-            await runPowerShell(script);
-        } catch (error) {
-            debugLog(`No child processes found for ${parentPid} on Windows:`, getErrorMessage(error));
-        }
-        return;
-    }
-
-    try {
-        await execFileAsync('pkill', ['-9', '-P', String(safePid)], { encoding: 'utf8' });
-    } catch (error) {
-        debugLog(`No child processes found for ${parentPid}:`, getErrorMessage(error));
     }
 }
 

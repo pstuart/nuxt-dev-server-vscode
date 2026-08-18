@@ -8,7 +8,9 @@ export interface ProcessTableEntry {
 }
 
 const NUXT_COMMANDS = new Set(['dev', 'preview']);
+const NUXT_EXECUTABLES = new Set(['nuxt', 'nuxi']);
 const HMR_PORT = '24678';
+const NODE_ERRNO_GONE = 'ESRCH';
 
 function commandTokens(command: string): string[] {
     const tokens: string[] = [];
@@ -21,18 +23,115 @@ function commandTokens(command: string): string[] {
 
 function executableName(token: string): string {
     const normalized = token.replace(/\\/g, '/');
-    return normalized.slice(normalized.lastIndexOf('/') + 1).toLowerCase();
+    const base = normalized.slice(normalized.lastIndexOf('/') + 1).toLowerCase();
+    return base.replace(/\.(cmd|exe|bat|ps1|js|mjs|cjs)$/i, '');
 }
 
-/** Match an argv token named exactly `nuxt` followed by the dev/preview command. */
+/** Match an argv token named `nuxt` or `nuxi` followed by the dev/preview command. */
 export function matchesNuxtDevPreview(command: string): boolean {
     const tokens = commandTokens(command);
     return tokens.some((token, index) => {
-        if (executableName(token) !== 'nuxt') {
+        if (!NUXT_EXECUTABLES.has(executableName(token))) {
             return false;
         }
         return NUXT_COMMANDS.has(tokens[index + 1]?.toLowerCase() ?? '');
     });
+}
+
+/**
+ * Project root from a Nuxt CLI path inside node_modules.
+ * Windows Win32_Process has no cwd; this is the reliable fallback.
+ */
+export function inferWorkingDirFromCommand(command: string): string | undefined {
+    for (const token of commandTokens(command)) {
+        const match = token.match(
+            /^(.*?)[/\\]node_modules[/\\](?:\.bin[/\\](?:nuxt|nuxi)(?:\.\w+)?|(?:nuxt|nuxi)(?:[/\\]|$))/i
+        );
+        if (match?.[1]) {
+            return match[1];
+        }
+    }
+    return undefined;
+}
+
+/** Listening descendant or the wrapper itself. */
+export function isManagedNuxtProcess(
+    proc: Pick<NuxtProcess, 'pid' | 'ancestorPids'>,
+    managedPid?: string
+): boolean {
+    if (!managedPid) {
+        return false;
+    }
+    return proc.pid === managedPid || proc.ancestorPids.includes(managedPid);
+}
+
+/** Descendants of parentPid, deepest first. Cycle-safe. */
+export function collectDescendantPids(
+    parentPid: string,
+    entries: ReadonlyArray<ProcessTableEntry>
+): string[] {
+    const childrenByParent = new Map<string, string[]>();
+    for (const entry of entries) {
+        const siblings = childrenByParent.get(entry.parentPid);
+        if (siblings) {
+            siblings.push(entry.pid);
+        } else {
+            childrenByParent.set(entry.parentPid, [entry.pid]);
+        }
+    }
+
+    const result: string[] = [];
+    const visited = new Set<string>();
+    const walk = (pid: string): void => {
+        for (const child of childrenByParent.get(pid) ?? []) {
+            if (visited.has(child)) {
+                continue;
+            }
+            visited.add(child);
+            walk(child);
+            result.push(child);
+        }
+    };
+    walk(parentPid);
+    return result;
+}
+
+/** Node `process.kill` on a missing PID. */
+export function isProcessGoneError(error: unknown): boolean {
+    return Boolean(
+        error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error as { code?: unknown }).code === NODE_ERRNO_GONE
+    );
+}
+
+/** One compressed JSON object per line from the Windows CIM listing. */
+export function parseWindowsProcessJsonLines(stdout: string): ProcessTableEntry[] {
+    const table: ProcessTableEntry[] = [];
+    for (const line of stdout.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('{')) {
+            continue;
+        }
+        try {
+            const obj = JSON.parse(trimmed) as {
+                pid?: number | string;
+                parentPid?: number | string;
+                command?: string;
+            };
+            if (obj.pid !== undefined && obj.parentPid !== undefined && obj.command) {
+                table.push({
+                    pid: String(obj.pid),
+                    parentPid: String(obj.parentPid),
+                    command: String(obj.command),
+                });
+            }
+        } catch {
+            // skip malformed line
+        }
+    }
+    return table;
 }
 
 export function parseUnixProcessTable(output: string): ProcessTableEntry[] {
@@ -92,10 +191,7 @@ export function selectExtraNuxtProcesses(
         if (normalizedPath(proc.workingDir) !== workspace) {
             return false;
         }
-        if (!managedPid) {
-            return true;
-        }
-        return proc.pid !== managedPid && !proc.ancestorPids.includes(managedPid);
+        return !isManagedNuxtProcess(proc, managedPid);
     });
 }
 

@@ -34,19 +34,26 @@ export function disposeAllOutputChannels(): void {
  */
 export function formatPathForDisplay(filePath: string): string {
     const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? '';
-    if (homeDir && filePath.startsWith(homeDir)) {
+    if (homeDir && (filePath === homeDir || filePath.startsWith(homeDir + '/'))) {
         return filePath.replace(homeDir, '~');
     }
     return filePath;
 }
 
 /**
- * Expand a path by replacing ~ with the home directory
+ * Expand a path by replacing ~ with the home directory.
+ * Only expands a leading `~` or `~/` — `~user` forms are left untouched.
  */
 export function expandPath(filePath: string): string {
     const homeDir = process.env.HOME ?? process.env.USERPROFILE ?? '';
-    if (filePath.startsWith('~') && homeDir) {
-        return filePath.replace('~', homeDir);
+    if (!homeDir) {
+        return filePath;
+    }
+    if (filePath === '~') {
+        return homeDir;
+    }
+    if (filePath.startsWith('~/')) {
+        return homeDir + filePath.slice(1);
     }
     return filePath;
 }

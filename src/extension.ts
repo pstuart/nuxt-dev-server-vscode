@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { startDevServer, stopDevServer, restartDevServer, cleanupManagedServer, clearManagedServer, getManagedServer } from './devServer';
+import { startDevServer, stopDevServer, restartDevServer, cleanupManagedServer, clearManagedServer, getManagedServer, isManagedServerRunning } from './devServer';
 import { initializeStatusBar, cleanupStatusBar, updateStatusBar } from './statusBar';
 import { showNuxtVersion } from './versionDetector';
 import {
@@ -93,7 +93,7 @@ function handleCommand<T>(fn: (...args: unknown[]) => Promise<T>) {
 async function showQuickPick(): Promise<void> {
     const runningCount = await getRunningNuxtProcessCount();
     const managedServer = getManagedServer();
-    const isOwnServerRunning = managedServer !== null && !managedServer.process.killed;
+    const isOwnServerRunning = isManagedServerRunning();
 
     const items: vscode.QuickPickItem[] = [
         {

@@ -264,9 +264,18 @@ async function startDevServerInternal(): Promise<boolean> {
     let detectedUrl = `http://localhost:${detectedPort}`;
     let serverStarted = false;
     let resolveOutputPort: (port: number) => void;
-    const outputPort = new Promise<number>(resolve => {
+    let rejectOutputPort: (reason: Error) => void;
+    let outputPortResolved = false;
+    const outputPort = new Promise<number>((resolve, reject) => {
         resolveOutputPort = resolve;
+        rejectOutputPort = reject;
     });
+    const rejectOutputPortIfPending = (reason: string): void => {
+        if (!outputPortResolved) {
+            outputPortResolved = true;
+            rejectOutputPort(new Error(reason));
+        }
+    };
 
     // Handle stdout
     childProcess.stdout?.on('data', (data: Buffer) => {
@@ -284,6 +293,7 @@ async function startDevServerInternal(): Promise<boolean> {
             }
             detectedPort = parsedPort;
             detectedUrl = `http://localhost:${detectedPort}`;
+            outputPortResolved = true;
             resolveOutputPort(detectedPort);
             if (managedServer?.process === childProcess) {
                 managedServer.port = detectedPort;
@@ -320,6 +330,7 @@ async function startDevServerInternal(): Promise<boolean> {
             // Clear auto-kill state when server terminates
             onServerStop();
         }
+        rejectOutputPortIfPending(`server process closed with code ${code}`);
     });
 
     // Handle process exit
@@ -333,6 +344,7 @@ async function startDevServerInternal(): Promise<boolean> {
             // Clear auto-kill state when server exits
             onServerStop();
         }
+        rejectOutputPortIfPending(`server process exited with code ${code}, signal ${signal}`);
     });
 
     // Handle errors
@@ -347,6 +359,7 @@ async function startDevServerInternal(): Promise<boolean> {
             // Clear auto-kill state when server fails to start
             onServerStop();
         }
+        rejectOutputPortIfPending(`server process error: ${getErrorMessage(error)}`);
     });
 
     // Create managed server instance
@@ -357,18 +370,26 @@ async function startDevServerInternal(): Promise<boolean> {
         url: detectedUrl
     };
 
-    // Wait for server to start listening (with timeout)
+    // Wait for server to start listening (with timeout).
+    // outputPort is rejected when the child process exits before printing a port,
+    // so the race resolves immediately instead of waiting for the polling loop.
     const discoveryController = new AbortController();
-    const actualPort = await Promise.race([
-        outputPort,
-        waitForProcessTreePort(
-            childProcess.pid,
-            rootPath,
-            detectedPort,
-            DEFAULT_CONFIG.SERVER_START_TIMEOUT_MS,
-            discoveryController.signal
-        ),
-    ]);
+    let actualPort: number | null;
+    try {
+        actualPort = await Promise.race([
+            outputPort,
+            waitForProcessTreePort(
+                childProcess.pid,
+                rootPath,
+                detectedPort,
+                DEFAULT_CONFIG.SERVER_START_TIMEOUT_MS,
+                discoveryController.signal
+            ),
+        ]);
+    } catch {
+        // Child process exited before printing a port — treat as null.
+        actualPort = null;
+    }
     discoveryController.abort();
 
     if (actualPort !== null) {

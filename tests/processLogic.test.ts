@@ -330,3 +330,99 @@ describe('kill identity change before SIGKILL', () => {
             .toBe(true);
     });
 });
+
+describe('outputPort rejection on early exit', () => {
+    /**
+     * Simulates the pattern used in startDevServer: a promise that can be
+     * resolved (port detected from stdout) or rejected (process exited early).
+     * The reject path must be idempotent — multiple exit signals (close + exit)
+     * should not cause double-rejection errors.
+     */
+    it('rejects the outputPort promise when the process exits before printing a port', async () => {
+        let resolvePort: (p: number) => void;
+        let rejectPort: (reason: Error) => void;
+        let settled = false;
+        const portPromise = new Promise<number>((resolve, reject) => {
+            resolvePort = resolve;
+            rejectPort = reject;
+        });
+
+        const rejectIfPending = (reason: string): void => {
+            if (!settled) {
+                settled = true;
+                rejectPort(new Error(reason));
+            }
+        };
+
+        // Simulate 'exit' event firing
+        rejectIfPending('process exited with code 1');
+        // Simulate 'close' event firing after 'exit' — must be a no-op
+        rejectIfPending('process closed with code 1');
+
+        const result = await Promise.race([portPromise, new Promise<number>(r => setTimeout(() => r(-1), 100))]).catch(() => null);
+        expect(result).toBeNull();
+        expect(settled).toBe(true);
+    });
+
+    it('does not reject after the port was already resolved from stdout', async () => {
+        let resolvePort: (p: number) => void;
+        let rejectPort: (reason: Error) => void;
+        let settled = false;
+        const portPromise = new Promise<number>((resolve, reject) => {
+            resolvePort = resolve;
+            rejectPort = reject;
+        });
+
+        const resolveIfPending = (port: number): void => {
+            if (!settled) {
+                settled = true;
+                resolvePort(port);
+            }
+        };
+        const rejectIfPending = (reason: string): void => {
+            if (!settled) {
+                settled = true;
+                rejectPort(new Error(reason));
+            }
+        };
+
+        // Simulate port detection from stdout
+        resolveIfPending(3000);
+        // Process exits after port was detected — should not reject
+        rejectIfPending('process closed with code 0');
+
+        const result = await Promise.race([portPromise, new Promise<number>(r => setTimeout(() => r(-1), 100))]);
+        expect(result).toBe(3000);
+        expect(settled).toBe(true);
+    });
+
+    it('resolves the race immediately when process dies, not after polling timeout', async () => {
+        let rejectPort: (reason: Error) => void;
+        let settled = false;
+        const portPromise = new Promise<number>((_resolve, reject) => {
+            rejectPort = reject;
+        });
+
+        const rejectIfPending = (reason: string): void => {
+            if (!settled) {
+                settled = true;
+                rejectPort(new Error(reason));
+            }
+        };
+
+        // Simulate the process dying before the race begins
+        rejectIfPending('process exited with code 1');
+
+        const startTime = Date.now();
+        const result = await Promise.race([
+            portPromise,
+            // Simulate a slow polling loop that would resolve after 3s
+            new Promise<number>(r => setTimeout(() => r(null as unknown as number), 3000)),
+        ]).catch(() => null);
+        const elapsed = Date.now() - startTime;
+
+        // Process exited before the race — race should resolve in well under 1 second
+        expect(result).toBeNull();
+        expect(elapsed).toBeLessThan(1000);
+    });
+});

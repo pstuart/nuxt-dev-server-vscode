@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
     ancestorPids,
     collectDescendantPids,
+    createOutputPortProbe,
     inferWorkingDirFromCommand,
     isManagedNuxtProcess,
     isProcessGoneError,
@@ -328,5 +329,70 @@ describe('kill identity change before SIGKILL', () => {
         )).toBe(true);
         expect(shouldRefuseSigkillEscalation(undefined, 'node /workspace/node_modules/.bin/nuxt dev'))
             .toBe(true);
+    });
+});
+
+describe('outputPort rejection on early exit', () => {
+    it('rejects the outputPort promise when the process exits before printing a port', async () => {
+        const outputPort = createOutputPortProbe();
+
+        outputPort.rejectIfPending('process exited with code 1');
+        outputPort.rejectIfPending('process closed with code 1');
+
+        const result = await Promise.race([
+            outputPort.promise,
+            new Promise<number>(r => setTimeout(() => r(-1), 100)),
+        ]).catch(() => null);
+        expect(result).toBeNull();
+    });
+
+    it('does not reject after the port was already resolved from stdout', async () => {
+        const outputPort = createOutputPortProbe();
+
+        outputPort.resolve(3000);
+        outputPort.rejectIfPending('process closed with code 0');
+
+        const result = await Promise.race([
+            outputPort.promise,
+            new Promise<number>(r => setTimeout(() => r(-1), 100)),
+        ]);
+        expect(result).toBe(3000);
+    });
+
+    it('resolves the race immediately when process dies, not after polling timeout', async () => {
+        const outputPort = createOutputPortProbe();
+        outputPort.rejectIfPending('process exited with code 1');
+
+        const startTime = Date.now();
+        const result = await Promise.race([
+            outputPort.promise,
+            new Promise<number>(r => setTimeout(() => r(null as unknown as number), 3000)),
+        ]).catch(() => null);
+        const elapsed = Date.now() - startTime;
+
+        expect(result).toBeNull();
+        expect(elapsed).toBeLessThan(1000);
+    });
+
+    it('does not emit unhandledRejection when polling wins then the process exits', async () => {
+        const unhandled: unknown[] = [];
+        const onUnhandled = (reason: unknown): void => {
+            unhandled.push(reason);
+        };
+        process.on('unhandledRejection', onUnhandled);
+        try {
+            const outputPort = createOutputPortProbe();
+            const result = await Promise.race([
+                outputPort.promise,
+                Promise.resolve(3000),
+            ]).catch(() => null);
+            expect(result).toBe(3000);
+
+            outputPort.rejectIfPending('process closed with code 0');
+            await new Promise<void>(resolve => setImmediate(resolve));
+            expect(unhandled).toEqual([]);
+        } finally {
+            process.off('unhandledRejection', onUnhandled);
+        }
     });
 });

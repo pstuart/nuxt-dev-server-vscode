@@ -255,3 +255,40 @@ const BINARY_NAME_RE = /^[a-zA-Z0-9_-]+$/;
 export function isSafeBinaryName(binary: string): boolean {
     return BINARY_NAME_RE.test(binary);
 }
+
+export interface OutputPortProbe {
+    readonly promise: Promise<number>;
+    resolve(port: number): void;
+    rejectIfPending(reason: string): void;
+}
+
+/**
+ * Port from stdout, or rejection if the child exits first.
+ * Attaches a no-op catch so a later exit cannot become unhandled if
+ * waitForProcessTreePort already won the start-up race.
+ */
+export function createOutputPortProbe(): OutputPortProbe {
+    let settled = false;
+    let resolvePort!: (port: number) => void;
+    let rejectPort!: (reason: Error) => void;
+    const promise = new Promise<number>((resolve, reject) => {
+        resolvePort = resolve;
+        rejectPort = reject;
+    });
+    void promise.catch(() => {});
+    return {
+        promise,
+        resolve(port: number): void {
+            if (!settled) {
+                settled = true;
+                resolvePort(port);
+            }
+        },
+        rejectIfPending(reason: string): void {
+            if (!settled) {
+                settled = true;
+                rejectPort(new Error(reason));
+            }
+        },
+    };
+}

@@ -14,9 +14,6 @@ export const DEFAULT_CONFIG = {
  */
 export const PROCESS_PATTERNS = {
     PORT_REGEX: /http:\/\/localhost:(\d+)/,
-    LSOF_PORT_REGEX: /:(\d+)\s+\(LISTEN\)/,
-    /** Documented alias — matching lives in processLogic.matchesNuxtDevPreview. */
-    NUXT_DEV_PREVIEW: 'nuxt dev|nuxt preview',
 } as const;
 
 /**

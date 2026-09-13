@@ -36,7 +36,7 @@ async function readJSONFile(filePath: string): Promise<PackageJson | null> {
 /**
  * Get comprehensive Nuxt version information
  */
-export async function getNuxtVersionInfo(rootPath: string): Promise<NuxtVersionInfo> {
+async function getNuxtVersionInfo(rootPath: string): Promise<NuxtVersionInfo> {
     const versionInfo: NuxtVersionInfo = {
         declared: 'Not found',
         installed: 'Not installed',
@@ -108,7 +108,7 @@ export async function getNuxtVersionInfo(rootPath: string): Promise<NuxtVersionI
 /**
  * Format version information as a readable string
  */
-export function formatVersionInfo(versionInfo: NuxtVersionInfo): string {
+function formatVersionInfo(versionInfo: NuxtVersionInfo): string {
     const lines: string[] = [
         'Nuxt Version Information:',
         '',

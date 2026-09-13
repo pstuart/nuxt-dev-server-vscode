@@ -20,7 +20,7 @@ const execFileAsync = promisify(execFile);
  * Prefer execFile + argv (never shell string interpolation) to avoid cmd/PowerShell injection.
  */
 
-export interface ProcessEntry {
+interface ProcessEntry {
     pid: string;
     command: string;
     ancestorPids: string[];

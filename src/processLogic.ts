@@ -256,7 +256,7 @@ export function isSafeBinaryName(binary: string): boolean {
     return BINARY_NAME_RE.test(binary);
 }
 
-export interface OutputPortProbe {
+interface OutputPortProbe {
     readonly promise: Promise<number>;
     resolve(port: number): void;
     rejectIfPending(reason: string): void;

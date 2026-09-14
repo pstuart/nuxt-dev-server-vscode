@@ -87,7 +87,7 @@ export function onServerStop(): void {
 /**
  * Check auto-kill conditions and kill servers if needed
  */
-export async function checkAutoKillConditions(): Promise<void> {
+async function checkAutoKillConditions(): Promise<void> {
     const config = getConfig();
     const autoKillTimeout = config.autoKillTimeout;
     const autoKillIdleTime = config.autoKillIdleTime;

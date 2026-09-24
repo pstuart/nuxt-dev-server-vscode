@@ -262,7 +262,6 @@ async function startDevServerInternal(): Promise<boolean> {
     // Track server state
     let detectedPort = config.defaultPort;
     let detectedUrl = `http://localhost:${detectedPort}`;
-    let serverStarted = false;
     const outputPort = createOutputPortProbe();
 
     // Handle stdout
@@ -288,16 +287,6 @@ async function startDevServerInternal(): Promise<boolean> {
                 forceStatusBarUpdate();
             }
             debugLog(`Detected server port: ${detectedPort}`);
-
-            if (!serverStarted) {
-                serverStarted = true;
-                void Promise.resolve(showInfo(`Nuxt dev server started on port ${detectedPort}`)).catch(() => {});
-
-                // Open browser if configured
-                if (config.openBrowserOnStart) {
-                    void vscode.env.openExternal(vscode.Uri.parse(detectedUrl));
-                }
-            }
         }
     });
 
@@ -385,12 +374,11 @@ async function startDevServerInternal(): Promise<boolean> {
         managedServer.url = `http://localhost:${actualPort}`;
         debugLog(`Server verified listening on port ${actualPort}`);
 
-        if (!serverStarted) {
-            await showInfo(`Nuxt dev server started on port ${actualPort}`);
+        // The toast resolves on dismissal; startup must not wait for that UI action.
+        void Promise.resolve(showInfo(`Nuxt dev server started on port ${actualPort}`)).catch(() => {});
 
-            if (config.openBrowserOnStart) {
-                void vscode.env.openExternal(vscode.Uri.parse(managedServer.url));
-            }
+        if (config.openBrowserOnStart) {
+            void vscode.env.openExternal(vscode.Uri.parse(managedServer.url));
         }
 
         // Notify auto-kill module that server has started

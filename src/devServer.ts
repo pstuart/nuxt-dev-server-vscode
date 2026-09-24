@@ -374,7 +374,8 @@ async function startDevServerInternal(): Promise<boolean> {
         managedServer.url = `http://localhost:${actualPort}`;
         debugLog(`Server verified listening on port ${actualPort}`);
 
-        await showInfo(`Nuxt dev server started on port ${actualPort}`);
+        // The toast resolves on dismissal; startup must not wait for that UI action.
+        void showInfo(`Nuxt dev server started on port ${actualPort}`);
 
         if (config.openBrowserOnStart) {
             void vscode.env.openExternal(vscode.Uri.parse(managedServer.url));

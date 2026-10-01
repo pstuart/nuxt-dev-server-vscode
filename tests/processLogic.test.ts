@@ -1,4 +1,22 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+// The cancellation regression below imports src/processManager, which reaches
+// utils.ts → vscode. Mock vscode so the module loads in a plain Node test.
+vi.mock('vscode', () => ({
+    window: {
+        createOutputChannel: vi.fn(() => ({ appendLine: vi.fn(), dispose: vi.fn() })),
+        showErrorMessage: vi.fn(),
+        showWarningMessage: vi.fn(),
+        showInformationMessage: vi.fn(),
+    },
+    workspace: {
+        getConfiguration: vi.fn(() => ({
+            get: vi.fn((_key: string, defaultVal: unknown) => defaultVal),
+        })),
+    },
+}));
+
+const { waitForProcessTreePort } = await import('../src/processManager');
 import {
     ancestorPids,
     collectDescendantPids,
@@ -225,6 +243,98 @@ describe('waitForProcessTreePort selection', () => {
             '/workspace',
             70000
         )).toBeNull();
+    });
+});
+
+describe('waitForProcessTreePort cancellation', () => {
+    // process.pid is always alive, so the parent-liveness check never ends the loop.
+    const ALIVE_PID = process.pid;
+
+    const listening = (pid: string, port: string): NuxtProcess => ({
+        pid,
+        workingDir: '/workspace',
+        ancestorPids: [String(ALIVE_PID)],
+        command: 'node /workspace/node_modules/.bin/nuxt dev',
+        port,
+    });
+
+    it('performs no detection when the signal is already aborted', async () => {
+        let calls = 0;
+        const detect = async (): Promise<NuxtProcess[]> => {
+            calls++;
+            return [];
+        };
+        const controller = new AbortController();
+        controller.abort();
+
+        const result = await waitForProcessTreePort(
+            ALIVE_PID, '/workspace', 3000, 60_000, controller.signal, detect
+        );
+
+        expect(result).toBeNull();
+        expect(calls).toBe(0);
+    });
+
+    it('returns promptly when the signal aborts while the poll is sleeping and stops calling detection', async () => {
+        let calls = 0;
+        const detect = async (): Promise<NuxtProcess[]> => {
+            calls++;
+            return [];
+        };
+        const controller = new AbortController();
+
+        const poll = waitForProcessTreePort(
+            ALIVE_PID, '/workspace', 3000, 60_000, controller.signal, detect
+        );
+        // Let the first detection finish so the loop parks in the 250ms interval.
+        while (calls === 0) {
+            await new Promise<void>(resolve => setImmediate(resolve));
+        }
+
+        const abortTime = Date.now();
+        controller.abort();
+        const result = await poll;
+        const elapsedAfterAbort = Date.now() - abortTime;
+
+        // The pre-fix loop slept out the whole 250ms interval before noticing
+        // the abort; cancellation must resolve within a scheduling slice.
+        expect(elapsedAfterAbort).toBeLessThan(100);
+        expect(result).toBeNull();
+
+        // No further detection iteration may start after the abort.
+        const callsAtAbort = calls;
+        await new Promise<void>(resolve => setTimeout(resolve, 300));
+        expect(calls).toBe(callsAtAbort);
+    });
+
+    it('discards an in-flight detection result when the signal aborts during it', async () => {
+        let calls = 0;
+        const controller = new AbortController();
+        // The caller (devServer) aborts as soon as stdout reports a port, so a
+        // detection that resolves after the abort is stale: the loop must not
+        // consume its result or start a second iteration.
+        const detect = async (): Promise<NuxtProcess[]> => {
+            calls++;
+            controller.abort();
+            return [listening('102', '3000')];
+        };
+
+        const result = await waitForProcessTreePort(
+            ALIVE_PID, '/workspace', 3000, 60_000, controller.signal, detect
+        );
+
+        expect(result).toBeNull();
+        expect(calls).toBe(1);
+    });
+
+    it('still resolves the listening port when no signal is provided', async () => {
+        const detect = async (): Promise<NuxtProcess[]> => [listening('102', '3000')];
+
+        const result = await waitForProcessTreePort(
+            ALIVE_PID, '/workspace', 3000, 60_000, undefined, detect
+        );
+
+        expect(result).toBe(3000);
     });
 });
 

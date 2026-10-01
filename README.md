@@ -28,7 +28,7 @@ A Visual Studio Code extension to manage Nuxt development servers directly from 
 Click the Nuxt status bar item (lower left) to access all commands via quick pick menu.
 
 The status bar shows:
-- `⚡ Nuxt Dev (n)` - When your managed server is running (n = total instances)
+- `$(radio-tower) Nuxt Dev :port (n)` - When your managed server is running (port is the listening port, n is the total instance count)
 - `⚡ Nuxt (n)` - When other Nuxt instances are detected
 - `⊘ Nuxt Dev` - When no server is running
 

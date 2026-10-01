@@ -278,21 +278,52 @@ export async function killProcessesByWorkingDir(workingDir: string): Promise<num
     return results.filter(result => result.status === 'fulfilled').length;
 }
 
+/**
+ * Sleep that resolves early once `signal` aborts, so an abandoned poll
+ * returns immediately instead of waiting out the remaining interval.
+ * Both settle paths drop their listener, so no leak either way.
+ */
+function sleepOrAbort(ms: number, signal?: AbortSignal): Promise<void> {
+    if (!signal) {
+        return sleep(ms);
+    }
+    if (signal.aborted) {
+        return Promise.resolve();
+    }
+    return new Promise<void>(resolve => {
+        const onAbort = (): void => {
+            clearTimeout(timer);
+            resolve();
+        };
+        const timer = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
+            resolve();
+        }, ms);
+        signal.addEventListener('abort', onAbort, { once: true });
+    });
+}
+
 /** Wait for a listening Nuxt descendant of a package-manager wrapper. */
 export async function waitForProcessTreePort(
     parentPid: number,
     workingDir: string,
     expectedPort: number,
     timeoutMs: number = DEFAULT_CONFIG.SERVER_START_TIMEOUT_MS,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    detectProcesses: (signal?: AbortSignal) => Promise<NuxtProcess[]> = getRunningNuxtProcesses
 ): Promise<number | null> {
     const parent = sanitizePid(String(parentPid)).toString();
     const startTime = Date.now();
     while (!signal?.aborted && Date.now() - startTime < timeoutMs) {
-        const processes = (await getRunningNuxtProcesses()).map(proc => ({
+        const processes = (await detectProcesses(signal)).map(proc => ({
             ...proc,
             workingDir: expandPath(proc.workingDir),
         }));
+        // An abort that landed while detection was in flight must end the
+        // loop before its result is consumed or another interval is spent.
+        if (signal?.aborted) {
+            return null;
+        }
         const port = selectWaitForProcessTreePort(processes, parent, workingDir, expectedPort);
         if (port !== null) {
             return port;
@@ -302,7 +333,7 @@ export async function waitForProcessTreePort(
         } catch {
             return null;
         }
-        await sleep(250);
+        await sleepOrAbort(250, signal);
     }
     return null;
 }

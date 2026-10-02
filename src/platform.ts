@@ -1,6 +1,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { sanitizePid, debugLog, getErrorMessage } from './utils';
+import { debugLog, getErrorMessage } from './utils';
+import { parsePid } from './validation';
 import {
     ancestorPids,
     isSafeBinaryName,
@@ -97,7 +98,7 @@ export async function getProcessPort(
     pid: number,
     expectedPort?: number
 ): Promise<string | undefined> {
-    const safePid = sanitizePid(String(pid));
+    const safePid = parsePid(String(pid));
 
     if (process.platform === 'win32') {
         const script =
@@ -129,7 +130,7 @@ export async function getProcessPort(
 
 /** Return the exact command for identity checks before force-killing a PID. */
 export async function getProcessCommand(pid: number): Promise<string | undefined> {
-    const safePid = sanitizePid(String(pid));
+    const safePid = parsePid(String(pid));
     if (process.platform === 'win32') {
         const script =
             `$p = Get-CimInstance Win32_Process -Filter "ProcessId = ${safePid}" -ErrorAction SilentlyContinue; ` +
@@ -151,7 +152,7 @@ export async function getProcessCommand(pid: number): Promise<string | undefined
  * Get the working directory of a process by PID.
  */
 export async function getProcessWorkingDir(pid: number): Promise<string> {
-    const safePid = sanitizePid(String(pid));
+    const safePid = parsePid(String(pid));
 
     if (process.platform === 'win32') {
         // WorkingDirectory is not reliably on Get-Process; try ExecutablePath dirname as fallback.

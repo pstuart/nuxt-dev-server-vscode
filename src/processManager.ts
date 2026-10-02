@@ -1,6 +1,6 @@
 import { NuxtProcess } from './types';
 import { DEFAULT_CONFIG } from './constants';
-import { formatPathForDisplay, sanitizePid, debugLog, getErrorMessage, expandPath, sleep, showWarning, getConfig } from './utils';
+import { formatPathForDisplay, debugLog, getErrorMessage, expandPath, sleep, showWarning, getConfig } from './utils';
 import {
     listNuxtProcesses,
     listProcessTable,
@@ -15,7 +15,7 @@ import {
     selectWaitForProcessTreePort,
     shouldRefuseSigkillEscalation,
 } from './processLogic';
-import { isValidPort } from './validation';
+import { isValidPort, parsePid } from './validation';
 
 /**
  * Track process detection failures
@@ -64,8 +64,7 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
             // Verify this process is actually listening on a port
             let port: string | undefined;
             try {
-                const sanitizedPid = sanitizePid(pid);
-                port = await getProcessPort(sanitizedPid);
+                port = await getProcessPort(parsePid(pid));
             } catch (error) {
                 // Not listening on any port, skip this process
                 debugLog(`Process ${pid} not listening on any port, skipping`);
@@ -92,8 +91,7 @@ export async function getRunningNuxtProcesses(): Promise<NuxtProcess[]> {
                     : 'Unknown');
             if (workingDir === 'Unknown') {
                 try {
-                    const sanitizedPid = sanitizePid(pid);
-                    workingDir = await getProcessWorkingDir(sanitizedPid);
+                    workingDir = await getProcessWorkingDir(parsePid(pid));
                 } catch {
                     debugLog(`Could not get working directory for ${pid}`);
                 }
@@ -156,7 +154,7 @@ export async function getRunningNuxtProcessCount(): Promise<number> {
  * Kill a specific process by PID
  */
 export async function killProcess(pid: string): Promise<void> {
-    const numPid = sanitizePid(pid);
+    const numPid = parsePid(pid);
     debugLog(`Killing process ${numPid}`);
 
     try {
@@ -210,7 +208,7 @@ export async function killProcess(pid: string): Promise<void> {
  * so grandchildren of `npm run dev` are not left behind after `pkill -P`.
  */
 export async function killProcessTree(parentPid: string): Promise<void> {
-    const numPid = sanitizePid(parentPid);
+    const numPid = parsePid(parentPid);
     debugLog(`Killing process tree for ${numPid}`);
 
     try {
@@ -312,7 +310,7 @@ export async function waitForProcessTreePort(
     signal?: AbortSignal,
     detectProcesses: (signal?: AbortSignal) => Promise<NuxtProcess[]> = getRunningNuxtProcesses
 ): Promise<number | null> {
-    const parent = sanitizePid(String(parentPid)).toString();
+    const parent = parsePid(String(parentPid)).toString();
     const startTime = Date.now();
     while (!signal?.aborted && Date.now() - startTime < timeoutMs) {
         const processes = (await detectProcesses(signal)).map(proc => ({
@@ -342,7 +340,7 @@ export async function waitForProcessTreePort(
  * Verify a process is completely terminated
  */
 export async function verifyProcessTerminated(pid: string, maxWaitMs: number = 2000): Promise<boolean> {
-    const numPid = sanitizePid(pid);
+    const numPid = parsePid(pid);
     const startTime = Date.now();
 
     while (Date.now() - startTime < maxWaitMs) {

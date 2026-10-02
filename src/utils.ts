@@ -59,17 +59,6 @@ export function expandPath(filePath: string): string {
 }
 
 /**
- * Validate and sanitize a PID to prevent command injection
- */
-export function sanitizePid(pid: string): number {
-    const numPid = parseInt(pid, 10);
-    if (isNaN(numPid) || numPid <= 0) {
-        throw new Error(`Invalid PID: ${pid}`);
-    }
-    return numPid;
-}
-
-/**
  * Sleep for a specified duration
  */
 export function sleep(ms: number): Promise<void> {

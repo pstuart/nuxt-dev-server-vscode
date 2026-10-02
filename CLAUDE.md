@@ -102,7 +102,7 @@ This dual approach handles cases where the spawned shell has child processes.
 
 ### Status Bar Updates
 The status bar updates every 5 seconds by default (src/statusBar.ts, configurable via the `updateInterval` setting; changes apply live without reload) and shows:
-- `⚡ Nuxt Dev (n)` - Your managed server is running (n = total instances)
+- `$(radio-tower) Nuxt Dev :port (n)` - Your managed server is running (port is the listening port, n is the total instance count)
 - `⚡ Nuxt (n)` - Other instances detected, no managed server
 - `⊘ Nuxt Dev` - No servers running
 
@@ -156,15 +156,7 @@ All commands are prefixed with `nuxt-dev-server.`:
 ## Common Patterns
 
 ### Working Directory Handling
-Throughout the code, home directory is replaced with `~` for display:
-```typescript
-workingDir.replace(process.env.HOME || '', '~')
-```
-
-When resolving paths, expand back:
-```typescript
-proc.workingDir.replace('~', process.env.HOME || '')
-```
+Display paths with formatPathForDisplay (HOME or USERPROFILE, and only when the path equals that directory or starts with it plus '/'); expand only a leading '~' or '~/' with expandPath.
 
 ### Error Handling for Process Commands
 macOS commands may fail with permission issues or missing processes. Code uses try-catch with graceful degradation:

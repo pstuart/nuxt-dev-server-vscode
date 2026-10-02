@@ -2,19 +2,8 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // utils.ts imports vscode at module level; provide a minimal mock so the
 // module can be imported in a plain Node test environment.
-vi.mock('vscode', () => ({
-    window: {
-        createOutputChannel: vi.fn(() => ({ appendLine: vi.fn(), dispose: vi.fn() })),
-        showErrorMessage: vi.fn(),
-        showWarningMessage: vi.fn(),
-        showInformationMessage: vi.fn(),
-    },
-    workspace: {
-        getConfiguration: vi.fn(() => ({
-            get: vi.fn((_key: string, defaultVal: unknown) => defaultVal),
-        })),
-    },
-}));
+// vi.mock is hoisted above static imports, so load the shared factory lazily.
+vi.mock('vscode', async () => (await import('./vscodeMock')).mockVscodeModule());
 
 const { formatPathForDisplay, expandPath } = await import('../src/utils');
 

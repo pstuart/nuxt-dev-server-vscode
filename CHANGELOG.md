@@ -41,8 +41,8 @@ Major update with performance, security, and automation improvements.
   - `enableAutoCleanup`: Enable automatic cleanup warnings
   - `maxExtraServers`: Limit number of extra servers
   - `gracefulShutdownTimeout`: Timeout for graceful shutdown
-  - `statusBarUpdateInterval`: Configurable update frequency
-  - `customDevCommand`: Custom dev server command
+  - `updateInterval`: Configurable status bar update frequency
+  - `devCommand`: Custom dev server script name
   - `defaultPort`: Default port fallback
   - `showNotifications`: Toggle notifications on/off
 - **Configuration Hot-Reload**: Settings changes apply immediately

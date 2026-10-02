@@ -2,19 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 
 // The cancellation regression below imports src/processManager, which reaches
 // utils.ts → vscode. Mock vscode so the module loads in a plain Node test.
-vi.mock('vscode', () => ({
-    window: {
-        createOutputChannel: vi.fn(() => ({ appendLine: vi.fn(), dispose: vi.fn() })),
-        showErrorMessage: vi.fn(),
-        showWarningMessage: vi.fn(),
-        showInformationMessage: vi.fn(),
-    },
-    workspace: {
-        getConfiguration: vi.fn(() => ({
-            get: vi.fn((_key: string, defaultVal: unknown) => defaultVal),
-        })),
-    },
-}));
+// vi.mock is hoisted above static imports, so load the shared factory lazily.
+vi.mock('vscode', async () => (await import('./vscodeMock')).mockVscodeModule());
 
 const { waitForProcessTreePort } = await import('../src/processManager');
 import {

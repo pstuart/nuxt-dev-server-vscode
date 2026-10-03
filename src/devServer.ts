@@ -109,6 +109,20 @@ export function clearManagedServer(): void {
 }
 
 /**
+ * Shared teardown for the child close/exit/error handlers: only the child that
+ * still owns `managedServer` clears state and updates the UI, so a stale
+ * process's late event never clobbers a newer server.
+ */
+function clearManagedServerIfCurrent(child: ChildProcess): void {
+    if (managedServer?.process === child) {
+        managedServer = null;
+        forceStatusBarUpdate();
+        // Clear auto-kill state when the managed server goes away
+        onServerStop();
+    }
+}
+
+/**
  * Detect package manager from lock files with binary verification
  */
 async function detectPackageManager(rootPath: string): Promise<PackageManager> {
@@ -300,12 +314,7 @@ async function startDevServerInternal(): Promise<boolean> {
         debugLog(`Server process closed with code ${code}`);
         outputChannel.appendLine(`\nServer process closed with code ${code}`);
 
-        if (managedServer?.process === childProcess) {
-            managedServer = null;
-            forceStatusBarUpdate();
-            // Clear auto-kill state when server terminates
-            onServerStop();
-        }
+        clearManagedServerIfCurrent(childProcess);
         outputPort.rejectIfPending(`server process closed with code ${code}`);
     });
 
@@ -314,12 +323,7 @@ async function startDevServerInternal(): Promise<boolean> {
         debugLog(`Server process exited with code ${code}, signal ${signal}`);
         outputChannel.appendLine(`\nServer process exited with code ${code}, signal ${signal}`);
 
-        if (managedServer?.process === childProcess) {
-            managedServer = null;
-            forceStatusBarUpdate();
-            // Clear auto-kill state when server exits
-            onServerStop();
-        }
+        clearManagedServerIfCurrent(childProcess);
         outputPort.rejectIfPending(`server process exited with code ${code}, signal ${signal}`);
     });
 
@@ -329,12 +333,7 @@ async function startDevServerInternal(): Promise<boolean> {
         void Promise.resolve(showError(`Failed to start server: ${getErrorMessage(error)}`)).catch(() => {});
         outputChannel.appendLine(`Error: ${getErrorMessage(error)}`);
 
-        if (managedServer?.process === childProcess) {
-            managedServer = null;
-            forceStatusBarUpdate();
-            // Clear auto-kill state when server fails to start
-            onServerStop();
-        }
+        clearManagedServerIfCurrent(childProcess);
         outputPort.rejectIfPending(`server process error: ${getErrorMessage(error)}`);
     });
 

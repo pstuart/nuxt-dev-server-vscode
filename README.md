@@ -243,6 +243,12 @@ npm run compile
 # Watch for changes (development)
 npm run watch
 
+# Lint the source
+npm run lint
+
+# Run the test suite
+npm test
+
 # Package the extension (compiles first)
 npm run package:do
 

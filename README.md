@@ -156,6 +156,7 @@ This extension contributes the following settings (access via `Preferences: Open
 - **`nuxt-dev-server.devCommand`** (default: `"dev"`)
   - Package.json script name to run (e.g., `"dev"` or `"dev:custom"`)
   - Only alphanumeric characters, dashes, underscores, and colons are allowed
+  - Must be shorter than 100 characters
 
 - **`nuxt-dev-server.autoStartOnOpen`** (default: `false`)
   - Automatically start the dev server when the workspace opens

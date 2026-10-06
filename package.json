@@ -210,7 +210,8 @@
     "package:do": "npm run compile && vsce package",
     "package": "npm run version:patch && npm run package:do",
     "lint": "eslint src",
-    "test": "vitest run",
+    "typecheck:tests": "tsc -p tsconfig.test.json --noEmit",
+    "test": "tsc -p tsconfig.test.json --noEmit && vitest run",
     "test:watch": "vitest"
   },
   "devDependencies": {

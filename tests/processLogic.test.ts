@@ -26,6 +26,21 @@ import {
 import { evaluateWorkspaceTrust, untrustedWorkspaceMessage } from '../src/workspaceTrustLogic';
 import { NuxtProcess } from '../src/types';
 
+/** Shared NuxtProcess factory: canonical dev command, optional listening port. */
+const makeNuxtProcess = (
+    pid: string,
+    workingDir: string,
+    port?: string,
+    ancestorPids: string[] = [],
+    command = 'node /workspace/node_modules/.bin/nuxt dev'
+): NuxtProcess => ({
+    pid,
+    workingDir,
+    ancestorPids,
+    command,
+    ...(port === undefined ? {} : { port }),
+});
+
 describe('matchesNuxtDevPreview', () => {
     it.each([
         '/usr/bin/node /workspace/node_modules/.bin/nuxt dev',
@@ -87,13 +102,7 @@ describe('selectExtraNuxtProcesses', () => {
         pid: string,
         workingDir: string,
         ancestors: string[] = []
-    ): NuxtProcess => ({
-        pid,
-        workingDir,
-        ancestorPids: ancestors,
-        command: 'node /workspace/node_modules/.bin/nuxt dev',
-        port: '3000',
-    });
+    ): NuxtProcess => makeNuxtProcess(pid, workingDir, '3000', ancestors);
 
     it('excludes the managed wrapper and every listening descendant', () => {
         const extras = selectExtraNuxtProcesses([
@@ -188,13 +197,7 @@ describe('waitForProcessTreePort selection', () => {
         workingDir: string,
         port: string,
         ancestors: string[] = []
-    ): NuxtProcess => ({
-        pid,
-        workingDir,
-        ancestorPids: ancestors,
-        command: 'node /workspace/node_modules/.bin/nuxt dev',
-        port,
-    });
+    ): NuxtProcess => makeNuxtProcess(pid, workingDir, port, ancestors);
 
     it('returns the expected descendant port when the wrapper tree is listening', () => {
         const port = selectWaitForProcessTreePort(
@@ -239,13 +242,8 @@ describe('waitForProcessTreePort cancellation', () => {
     // process.pid is always alive, so the parent-liveness check never ends the loop.
     const ALIVE_PID = process.pid;
 
-    const listening = (pid: string, port: string): NuxtProcess => ({
-        pid,
-        workingDir: '/workspace',
-        ancestorPids: [String(ALIVE_PID)],
-        command: 'node /workspace/node_modules/.bin/nuxt dev',
-        port,
-    });
+    const listening = (pid: string, port: string): NuxtProcess =>
+        makeNuxtProcess(pid, '/workspace', port, [String(ALIVE_PID)]);
 
     it('performs no detection when the signal is already aborted', async () => {
         let calls = 0;

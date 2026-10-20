@@ -26,6 +26,7 @@ vi.mock('vscode', async () => {
 
 const { getConfig } = await import('../src/utils');
 const { isValidDevCommand } = await import('../src/processLogic');
+const { evaluateWorkspaceTrust, untrustedWorkspaceMessage } = await import('../src/workspaceTrustLogic');
 import packageJson from '../package.json';
 
 interface SchemaProperty {
@@ -183,6 +184,47 @@ describe('README Extension Settings matches the contributed schema', () => {
                 expect(Number(max![1]), `${name} README Max`).toBe(schema.maximum);
             } else {
                 expect(max, `${name} README documents Max but schema has none`).toBeNull();
+            }
+        }
+    });
+});
+
+describe('workspace trust contract', () => {
+    // The restrictedConfigurations surface declared in package.json must equal
+    // exactly the settings consumed by trust-gated code paths. Derived from the
+    // trust-sensitive actions rather than restated from the manifest.
+    const declaredRestricted = packageJson.capabilities.untrustedWorkspaces.restrictedConfigurations as string[];
+
+    it('declares exactly the settings read by trust-gated code paths', () => {
+        // start: extension.ts defers autoStartOnOpen to startDevServer, which
+        // reads devCommand/preferredPackageManager after the trust gate.
+        // autoKillExtras: maxExtraServers drives the destructive kill, gated by
+        // isDestructiveAutoKillAllowed; autoKillTimeout/IdleTime defer the
+        // managed-server auto-kill behind the same gate.
+        const gated = [
+            'autoStartOnOpen',
+            'devCommand',
+            'preferredPackageManager',
+            'autoKillTimeout',
+            'autoKillIdleTime',
+            'maxExtraServers',
+        ].sort();
+
+        expect(declaredRestricted.map(shortName).sort()).toEqual(gated);
+
+        // Every restricted setting must be a real contributed setting.
+        for (const name of gated) {
+            expect(properties[SECTION_PREFIX + name], `${name} contributed`).toBeDefined();
+        }
+    });
+
+    it('evaluateWorkspaceTrust allows trusted workspaces and messages untrusted ones', () => {
+        for (const action of ['start', 'killAll', 'listAndKill', 'autoKillExtras'] as const) {
+            expect(evaluateWorkspaceTrust(true, action)).toEqual({ allowed: true });
+            const decision = evaluateWorkspaceTrust(false, action);
+            expect(decision.allowed).toBe(false);
+            if (!decision.allowed) {
+                expect(decision.message).toBe(untrustedWorkspaceMessage(action));
             }
         }
     });

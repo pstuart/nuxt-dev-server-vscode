@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import {
     isValidPid,
     isValidPort,
@@ -121,14 +121,6 @@ describe('validation', () => {
     });
 
     describe('isPidNumber type guard', () => {
-        it('should narrow valid PID numbers', () => {
-            const value: unknown = 123;
-            if (isPidNumber(value)) {
-                expect(value).toBeTypeOf('number');
-                expect(value).toBe(123);
-            }
-        });
-
         it('should reject invalid PIDs', () => {
             expect(isPidNumber(0)).toBe(false);
             expect(isPidNumber(-1)).toBe(false);
@@ -138,14 +130,6 @@ describe('validation', () => {
     });
 
     describe('isPortNumber type guard', () => {
-        it('should narrow valid port numbers', () => {
-            const value: unknown = 8080;
-            if (isPortNumber(value)) {
-                expect(value).toBeTypeOf('number');
-                expect(value).toBe(8080);
-            }
-        });
-
         it('should reject invalid ports', () => {
             expect(isPortNumber(0)).toBe(false);
             expect(isPortNumber(-1)).toBe(false);

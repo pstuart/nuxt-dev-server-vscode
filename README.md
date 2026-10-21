@@ -65,9 +65,15 @@ View detailed information about all running Nuxt servers:
 ### List and Kill Instances
 
 The extension can detect all running Nuxt dev and preview servers:
-|- Shows PID, port, and working directory for each instance
-|- Multi-select to kill specific instances
-|- Useful when you have multiple projects running
+
+- Shows PID, port, and working directory for each instance
+- Multi-select to kill specific instances
+- Useful when you have multiple projects running
+
+Stopping now terminates the full process tree (wrapper and listening
+descendants) rather than only direct children, missing PIDs are treated as
+already gone, and a failed stop aborts a follow-up restart instead of spawning
+a duplicate server.
 
 ### Accurate Process Counting
 
@@ -271,7 +277,22 @@ See [PUBLISHING.md](PUBLISHING.md) for detailed instructions on:
 
 ## Release Notes
 
-### 0.0.8 (Latest)
+### Unreleased (next release)
+
+Reliability fixes to process handling, matching the Unreleased entries in
+CHANGELOG.md:
+
+- Stopping a server now walks the entire pid/ppid tree and terminates listening
+  descendants of the package-manager wrapper, so no orphaned children survive
+  a stop or extension deactivate
+- A missing PID (`ESRCH`) is treated as already stopped, and stop refuses to
+  report success while the wrapper is still alive
+- Restart aborts instead of spawning a second instance when the stop phase fails
+- Process matching accepts `nuxi dev` / `nuxi preview` and Windows `.cmd`
+  binaries, and the working directory is inferred from the Nuxt CLI path on
+  Windows
+
+### 0.0.8
 
 Restricted Mode / Workspace Trust gates start, kill-all, list-and-kill, and extra-server auto-kill. See CHANGELOG.md for full history.
 

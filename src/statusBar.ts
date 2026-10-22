@@ -102,16 +102,19 @@ export async function updateStatusBar(): Promise<void> {
             // Managed server is running - show with port
             statusBarItem.text = `${STATUS_BAR.ICON_RUNNING} ${STATUS_BAR.TEXT_DEV} :${managedServer.port} (${runningCount})`;
             statusBarItem.tooltip = `Nuxt server running on ${managedServer.url}\nTotal instances: ${runningCount}\nClick for options`;
+            statusBarItem.name = `${STATUS_BAR.ACCESSIBLE.RUNNING} on port ${managedServer.port} (${runningCount} instance${runningCount === 1 ? '' : 's'} in total)`;
             statusBarItem.backgroundColor = undefined;
         } else if (runningCount > 0) {
             // Other instances detected
             statusBarItem.text = `${STATUS_BAR.ICON_RUNNING} ${STATUS_BAR.TEXT_NUXT} (${runningCount})`;
             statusBarItem.tooltip = `${runningCount} Nuxt instance(s) detected\nNo managed server running\nClick for options`;
+            statusBarItem.name = `${STATUS_BAR.ACCESSIBLE.INSTANCES} (${runningCount})`;
             statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         } else {
             // No servers running
             statusBarItem.text = `${STATUS_BAR.ICON_STOPPED} ${STATUS_BAR.TEXT_DEV}`;
             statusBarItem.tooltip = 'No Nuxt server running\nClick to start';
+            statusBarItem.name = STATUS_BAR.ACCESSIBLE.IDLE;
             statusBarItem.backgroundColor = undefined;
         }
 

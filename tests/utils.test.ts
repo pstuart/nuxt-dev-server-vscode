@@ -5,7 +5,8 @@ import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 // vi.mock is hoisted above static imports, so load the shared factory lazily.
 vi.mock('vscode', async () => (await import('./vscodeMock')).mockVscodeModule());
 
-const { formatPathForDisplay, expandPath } = await import('../src/utils');
+const { formatPathForDisplay, expandPath, getConfig } = await import('../src/utils');
+const { clampNumber } = await import('../src/validation');
 
 const ORIGINAL_HOME = process.env.HOME;
 
@@ -85,4 +86,55 @@ describe('formatPathForDisplay', () => {
         const displayed = formatPathForDisplay(original);
         expect(expandPath(displayed)).toBe(original);
     });
+});
+
+describe('getConfig numeric clamping equivalence', () => {
+    interface NumericField {
+        key: 'defaultPort' | 'updateInterval' | 'autoKillTimeout' | 'autoKillIdleTime' | 'maxExtraServers' | 'gracefulShutdownTimeout';
+        min: number;
+        max: number;
+        fallback: number;
+    }
+
+    // Bounds mirror the getConfig call sites exactly.
+    const numericFields: NumericField[] = [
+        { key: 'defaultPort', min: 1, max: 65535, fallback: 3000 },
+        { key: 'updateInterval', min: 1000, max: 60000, fallback: 5000 },
+        { key: 'autoKillTimeout', min: 0, max: Number.POSITIVE_INFINITY, fallback: 0 },
+        { key: 'autoKillIdleTime', min: 0, max: Number.POSITIVE_INFINITY, fallback: 0 },
+        { key: 'maxExtraServers', min: 0, max: Number.POSITIVE_INFINITY, fallback: 0 },
+        { key: 'gracefulShutdownTimeout', min: 1000, max: 30000, fallback: 5000 }
+    ];
+
+    // Pre-consolidation implementation of the private clampConfigNumber.
+    const legacyClamp = (value: number, min: number, max: number, fallback: number): number => {
+        if (!Number.isFinite(value)) { return fallback; }
+        return Math.min(max, Math.max(min, value));
+    };
+
+    const sharedClamp = (value: number, min: number, max: number, fallback: number): number =>
+        clampNumber(value, min, max) ?? fallback;
+
+    it.each([
+        ['non-finite NaN uses the fallback', NaN],
+        ['+Infinity falls back per config contract', Infinity],
+        ['-Infinity falls back per config contract', -Infinity],
+        ['in-range value passes through', 42],
+        ['below min clamps to min', -100],
+        ['above max clamps to max', 1e9]
+    ])('%s', (_label, value: number) => {
+        for (const field of numericFields) {
+            expect(getConfigFieldEquals(field, value, legacyClamp, sharedClamp)).toBe(true);
+        }
+    });
+
+    function getConfigFieldEquals(
+        field: NumericField,
+        value: number,
+        legacy: typeof legacyClamp,
+        shared: typeof sharedClamp
+    ): boolean {
+        // The shared helper and the legacy inline clamp must agree for this field.
+        return legacy(value, field.min, field.max, field.fallback) === shared(value, field.min, field.max, field.fallback);
+    }
 });

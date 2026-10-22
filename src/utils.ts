@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as fs from 'fs/promises';
 import { OUTPUT_CHANNELS, CONFIG_SECTION } from './constants';
+import { clampNumber } from './validation';
 import { ExtensionConfig } from './types';
 
 /**
@@ -66,8 +67,7 @@ export function sleep(ms: number): Promise<void> {
 }
 
 function clampConfigNumber(value: number, min: number, max: number, fallback: number): number {
-    if (!Number.isFinite(value)) { return fallback; }
-    return Math.min(max, Math.max(min, value));
+    return clampNumber(value, min, max) ?? fallback;
 }
 
 /**

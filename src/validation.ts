@@ -55,15 +55,24 @@ export function parsePort(value: string): number {
 }
 
 /**
+ * Clamp a finite number to [min, max], flooring toward the lower bound.
+ * @param value Input number
+ * @returns Clamped value, or null if the input is not finite
+ */
+export function clampNumber(value: number, min: number, max: number): number | null {
+    if (!Number.isFinite(value)) {
+        return null;
+    }
+    return Math.max(min, Math.min(max, Math.floor(value)));
+}
+
+/**
  * Clamp a number to a valid port range
  * @param value Input number
  * @returns Clamped port in range 1-65535, or null if invalid input
  */
 export function clampPort(value: number): number | null {
-    if (!Number.isFinite(value)) {
-        return null;
-    }
-    return Math.max(MIN_PORT, Math.min(MAX_PORT, Math.floor(value)));
+    return clampNumber(value, MIN_PORT, MAX_PORT);
 }
 
 /**

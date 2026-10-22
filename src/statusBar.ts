@@ -118,6 +118,9 @@ export async function updateStatusBar(): Promise<void> {
             statusBarItem.backgroundColor = undefined;
         }
 
+        statusBarItem.accessibilityInformation = {
+            label: statusBarItem.name ?? STATUS_BAR.ACCESSIBLE.IDLE,
+        };
         statusBarItem.show();
     } catch (error) {
         debugLog('Error updating status bar:', error);

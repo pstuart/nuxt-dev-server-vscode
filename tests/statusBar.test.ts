@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 
 // statusBar.ts imports vscode at module level (directly and via
 // utils/processManager/devServer). Reuse the shared factory and add the
@@ -31,6 +31,7 @@ interface StatusBarItemLike {
     text: string;
     tooltip: string | undefined;
     name: string | undefined;
+    accessibilityInformation: { label: string } | undefined;
     backgroundColor: unknown;
     command: string | undefined;
     show: ReturnType<typeof vi.fn>;
@@ -46,6 +47,7 @@ function freshStatusBarItem(): StatusBarItemLike {
         text: '',
         tooltip: undefined,
         name: undefined,
+        accessibilityInformation: undefined,
         backgroundColor: undefined,
         command: undefined,
         show: vi.fn(),
@@ -54,7 +56,7 @@ function freshStatusBarItem(): StatusBarItemLike {
     };
 }
 
-const { updateStatusBar } = await import('../src/statusBar');
+const { updateStatusBar, cleanupStatusBar } = await import('../src/statusBar');
 const { STATUS_BAR } = await import('../src/constants');
 
 // Process/server state lives in module-level singletons; replace the modules
@@ -92,37 +94,42 @@ describe('updateStatusBar accessible state contract', () => {
         vi.restoreAllMocks();
     });
 
+    afterEach(() => { cleanupStatusBar(); });
+
     it('running-with-port branch sets name and tooltip identifying the running server and port', async () => {
-        const item = await initialize();
         stubState({ runningCount: 1, managedServer: { port: 3000, url: 'http://localhost:3000' } });
+        const item = await initialize();
 
         await updateStatusBar();
 
         expect(item.text).toBe('$(radio-tower) Nuxt Dev :3000 (1)');
         expect(item.name).toBe(`${STATUS_BAR.ACCESSIBLE.RUNNING} on port 3000 (1 instance in total)`);
+        expect(item.accessibilityInformation?.label).toBe(item.name);
         expect(item.tooltip).toContain('Nuxt server running on http://localhost:3000');
     });
 
     it('instances-detected branch sets a warning-state name distinct from the running state', async () => {
-        const item = await initialize();
         stubState({ runningCount: 2, managedServer: null });
+        const item = await initialize();
 
         await updateStatusBar();
 
         expect(item.text).toBe('$(radio-tower) Nuxt (2)');
         expect(item.name).toBe(`${STATUS_BAR.ACCESSIBLE.INSTANCES} (2)`);
+        expect(item.accessibilityInformation?.label).toBe(item.name);
         expect(item.tooltip).toContain('No managed server running');
         expect(item.backgroundColor).toBeInstanceOf(((await import('vscode')) as unknown as { ThemeColor: new (id: string) => object }).ThemeColor);
     });
 
     it('idle branch sets an idle name and a start-hint tooltip', async () => {
-        const item = await initialize();
         stubState({ runningCount: 0, managedServer: null });
+        const item = await initialize();
 
         await updateStatusBar();
 
         expect(item.text).toBe('$(circle-slash) Nuxt Dev');
         expect(item.name).toBe(STATUS_BAR.ACCESSIBLE.IDLE);
+        expect(item.accessibilityInformation?.label).toBe(item.name);
         expect(item.tooltip).toContain('No Nuxt server running');
     });
 });

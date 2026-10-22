@@ -55,7 +55,7 @@ export const STATUS_BAR = {
     TEXT_DEV: 'Nuxt Dev',
     TEXT_NUXT: 'Nuxt',
     /**
-     * Screen-reader-accessible state names (StatusBarItem.name) and tooltip
+     * State names for StatusBarItem.name and accessibilityInformation.label, and tooltip
      * lead lines, one per updateStatusBar branch. Kept in lockstep with the
      * visible text so the accessible name always matches what is rendered.
      */

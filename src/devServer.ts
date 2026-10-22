@@ -30,39 +30,14 @@ import { isValidPort } from './validation';
 /**
  * Whitelist of allowed package managers
  */
-const ALLOWED_PACKAGE_MANAGERS: PackageManager[] = ['npm', 'yarn', 'pnpm', 'bun'];
+const ALLOWED_PACKAGE_MANAGERS: readonly PackageManager[] = ['npm', 'yarn', 'pnpm', 'bun'];
 
 /**
- * Validate package manager is in whitelist
+ * Check if a package manager's binary is available (implies allowlist membership,
+ * since only allowlisted names can be configured or detected).
  */
-function isValidPackageManager(manager: string): manager is PackageManager {
-    return ALLOWED_PACKAGE_MANAGERS.includes(manager as PackageManager);
-}
-
-/**
- * Check if a package manager binary is available
- */
-async function isPackageManagerAvailable(manager: PackageManager): Promise<boolean> {
-    try {
-        // Validate against the allowlist first
-        if (!isValidPackageManager(manager)) {
-            return false;
-        }
-
-        // Use cross-platform binary detection (which on Unix, where on Windows)
-        const isAvailable = await isBinaryAvailable(manager);
-
-        if (isAvailable) {
-            debugLog(`Package manager '${manager}' found in PATH`);
-            return true;
-        }
-
-        debugLog(`Package manager '${manager}' not found in PATH`);
-        return false;
-    } catch (error) {
-        debugLog(`Error checking for ${manager}:`, getErrorMessage(error));
-        return false;
-    }
+async function isPackageManagerAvailable(manager: string): Promise<boolean> {
+    return (ALLOWED_PACKAGE_MANAGERS as readonly string[]).includes(manager) && isBinaryAvailable(manager);
 }
 
 /**
@@ -132,19 +107,13 @@ async function detectPackageManager(rootPath: string): Promise<PackageManager> {
     if (config.preferredPackageManager !== 'auto') {
         const preferredManager = config.preferredPackageManager;
 
-        if (!isValidPackageManager(preferredManager)) {
-            debugLog(`Invalid preferred package manager: ${String(preferredManager)}`);
-        } else {
-            const isAvailable = await isPackageManagerAvailable(preferredManager);
-
-            if (isAvailable) {
-                debugLog(`Using preferred package manager: ${preferredManager}`);
-                return preferredManager;
-            } else {
-                await showWarning(`Preferred package manager '${preferredManager}' not found. Falling back to auto-detection.`);
-                debugLog(`Preferred package manager ${preferredManager} not found, falling back to auto-detection`);
-            }
+        if (await isPackageManagerAvailable(preferredManager)) {
+            debugLog(`Using preferred package manager: ${preferredManager}`);
+            return preferredManager;
         }
+
+        await showWarning(`Preferred package manager '${preferredManager}' not found. Falling back to auto-detection.`);
+        debugLog(`Preferred package manager ${preferredManager} not found, falling back to auto-detection`);
     }
 
     // Auto-detect from lock files with binary verification
@@ -161,15 +130,13 @@ async function detectPackageManager(rootPath: string): Promise<PackageManager> {
 
         if (hasLockFile) {
             debugLog(`Found ${lockFile}`);
-            const isAvailable = await isPackageManagerAvailable(manager);
-
-            if (isAvailable) {
+            if (await isPackageManagerAvailable(manager)) {
                 debugLog(`Using ${manager} (lock file found and binary available)`);
                 return manager;
-            } else {
-                await showWarning(`Found ${lockFile} but '${manager}' is not installed. Continuing detection...`);
-                debugLog(`Found ${lockFile} but ${manager} is not installed, continuing...`);
             }
+
+            await showWarning(`Found ${lockFile} but '${manager}' is not installed. Continuing detection...`);
+            debugLog(`Found ${lockFile} but ${manager} is not installed, continuing...`);
         }
     }
 

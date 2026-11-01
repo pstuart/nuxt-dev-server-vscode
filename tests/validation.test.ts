@@ -5,6 +5,7 @@ import {
     parsePid,
     parsePort,
     clampPort,
+    clampNumber,
     isPidNumber,
     isPortNumber
 } from '../src/validation';
@@ -117,6 +118,51 @@ describe('validation', () => {
             expect(clampPort(Infinity)).toBeNull();
             expect(clampPort(-Infinity)).toBeNull();
             expect(clampPort(undefined as unknown as number)).toBeNull();
+        });
+
+        it('should floor fractional values toward the lower bound', () => {
+            expect(clampPort(8080.9)).toBe(8080);
+            expect(clampPort(0.9)).toBe(1);
+            expect(clampPort(-0.5)).toBe(1);
+            expect(clampPort(65535.9)).toBe(65535);
+        });
+    });
+
+    describe('clampNumber', () => {
+        it('should clamp finite values into the requested range', () => {
+            expect(clampNumber(5, 1, 10)).toBe(5);
+            expect(clampNumber(0, 1, 10)).toBe(1);
+            expect(clampNumber(42, 1, 10)).toBe(10);
+            expect(clampNumber(-3, 0, 100)).toBe(0);
+        });
+
+        it('should return null for non-finite inputs', () => {
+            expect(clampNumber(NaN, 1, 10)).toBeNull();
+            expect(clampNumber(Infinity, 1, 10)).toBeNull();
+            expect(clampNumber(-Infinity, 1, 10)).toBeNull();
+        });
+
+        it('should floor fractional values before clamping', () => {
+            expect(clampNumber(9.9, 1, 10)).toBe(9);
+            expect(clampNumber(0.1, 1, 10)).toBe(1);
+            expect(clampNumber(10.1, 1, 10)).toBe(10);
+        });
+
+        it('agrees with clampPort for every finite input', () => {
+            const cases = [-1, 0, 0.5, 1, 80, 8080, 65534, 65535, 65536, 1e9];
+            for (const value of cases) {
+                expect(clampNumber(value, 1, 65535)).toBe(clampPort(value));
+            }
+        });
+
+        it('supports the config-clamp contract: fallback on non-finite values', () => {
+            const fallback = 3000;
+            const fromShared = (value: number): number => clampNumber(value, 1, 65535) ?? fallback;
+            const legacy = (value: number): number =>
+                Number.isFinite(value) ? Math.min(65535, Math.max(1, value)) : fallback;
+            for (const value of [NaN, Infinity, -Infinity, 0, 1, 3000, 65535, 65536]) {
+                expect(fromShared(value)).toBe(legacy(value));
+            }
         });
     });
 

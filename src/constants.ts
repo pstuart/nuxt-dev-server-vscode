@@ -54,6 +54,16 @@ export const STATUS_BAR = {
     ICON_STOPPED: '$(circle-slash)',
     TEXT_DEV: 'Nuxt Dev',
     TEXT_NUXT: 'Nuxt',
+    /**
+     * State names for StatusBarItem.name and accessibilityInformation.label, and tooltip
+     * lead lines, one per updateStatusBar branch. Kept in lockstep with the
+     * visible text so the accessible name always matches what is rendered.
+     */
+    ACCESSIBLE: {
+        RUNNING: 'Nuxt dev server running',
+        INSTANCES: 'Nuxt instances detected, no managed server',
+        IDLE: 'Nuxt dev server idle',
+    },
 } as const;
 
 /**

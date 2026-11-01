@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { getManagedServer, stopDevServer, isManagedServerRunning } from './devServer';
 import { getRunningNuxtProcesses, killProcess } from './processManager';
 import { debugLog, getConfig, showWarning, showInfo, expandPath } from './utils';
-import { selectExtraNuxtProcesses } from './processLogic';
+import { selectExtraNuxtProcesses, selectExcessNuxtProcesses } from './processLogic';
 import { isDestructiveAutoKillAllowed, refuseIfUntrusted } from './workspaceTrust';
 
 /**
@@ -130,8 +130,12 @@ async function checkAutoKillConditions(): Promise<void> {
             if (maxExtraServers > 0) {
                 debugLog(`Found ${extraProcesses.length} extra server(s) in workspace`);
 
-                // Only act if we have more workspace processes than the limit
-                if (extraProcesses.length > maxExtraServers) {
+                // Count only usable PIDs: an invalid PID cannot be killed and
+                // must not inflate the surplus (which would under-kill).
+                const toKill = selectExcessNuxtProcesses(extraProcesses, maxExtraServers);
+
+                // Only act if we have more valid workspace processes than the limit
+                if (toKill.length > 0) {
                     if (!isDestructiveAutoKillAllowed()) {
                         debugLog('maxExtraServers kill skipped: workspace is not trusted');
                         if (!warnedUntrustedAutoKill) {
@@ -139,11 +143,6 @@ async function checkAutoKillConditions(): Promise<void> {
                             await refuseIfUntrusted('autoKillExtras');
                         }
                     } else {
-                        const toKill = extraProcesses
-                            .filter(p => !isNaN(parseInt(p.pid, 10)) && parseInt(p.pid, 10) > 0)
-                            .sort((a, b) => parseInt(a.pid, 10) - parseInt(b.pid, 10))
-                            .slice(0, extraProcesses.length - maxExtraServers);
-
                         debugLog(`Killing ${toKill.length} extra servers due to maxExtraServers limit`);
 
                         await Promise.all(toKill.map(async proc => {

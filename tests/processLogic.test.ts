@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from 'vitest';
 vi.mock('vscode', async () => (await import('./vscodeMock')).mockVscodeModule());
 
 const { waitForProcessTreePort } = await import('../src/processManager');
+import * as processLogic from '../src/processLogic';
 import {
     ancestorPids,
     collectDescendantPids,
@@ -134,6 +135,76 @@ describe('selectExtraNuxtProcesses', () => {
             .toBe('103');
         expect(selectManagedNuxtProcess(processes, '999', '/workspace', 3001))
             .toBeUndefined();
+    });
+});
+
+describe('selectExcessNuxtProcesses', () => {
+    const process = (
+        pid: string,
+        workingDir: string,
+        ancestors: string[] = []
+    ): NuxtProcess => makeNuxtProcess(pid, workingDir, '3000', ancestors);
+
+    // The helper is a fix for the length-based slice in autoKill. Bind the
+    // reference through a typed function value so the regression test still
+    // type-checks against the original source (no exported symbol yet): if the
+    // helper is missing at runtime, the test fails by assertion rather than by
+    // a compile/import error.
+    const excessSelection = (processLogic as {
+        selectExcessNuxtProcesses?: (
+            extraProcesses: ReadonlyArray<NuxtProcess>,
+            maxExtraServers: number
+        ) => NuxtProcess[];
+    }).selectExcessNuxtProcesses;
+    const selectExcess = (
+        extraProcesses: ReadonlyArray<NuxtProcess>,
+        maxExtraServers: number
+    ): NuxtProcess[] => {
+        expect(typeof excessSelection).toBe('function');
+        return excessSelection!(extraProcesses, maxExtraServers);
+    };
+
+    it('selects only valid-PID extras, lowest first, excluding the invalid PID', () => {
+        // Three workspace extras (one non-numeric PID) with maxExtraServers=1.
+        // validCount = 2, so the lowest (2 - 1) = 1 entry is selected — PID 100 —
+        // and 'abc' is never selected. The original length-based slice computed
+        // 3 - 1 = 2 and killed both valid servers [100, 200].
+        const extras = selectExtraNuxtProcesses([
+            process('100', '/workspace'),
+            process('200', '/workspace'),
+            process('abc', '/workspace'),
+        ], '/workspace');
+
+        expect(extras.map(item => item.pid)).toEqual(['100', '200', 'abc']);
+
+        const toKill = selectExcess(extras, 1);
+
+        expect(toKill.map(item => item.pid)).toEqual(['100']);
+        expect(toKill.some(item => item.pid === 'abc')).toBe(false);
+    });
+
+    it('keeps the original kill count when every extra PID is valid', () => {
+        // Regression guard against the earlier over-shrink: three valid extras
+        // with maxExtraServers=1 still kill the two lowest PIDs, exactly as the
+        // original length-based slice did (3 - 1 = 2).
+        const extras = selectExtraNuxtProcesses([
+            process('300', '/workspace'),
+            process('100', '/workspace'),
+            process('200', '/workspace'),
+        ], '/workspace');
+
+        expect(selectExcess(extras, 1).map(item => item.pid))
+            .toEqual(['100', '200']);
+    });
+
+    it('kills nothing when valid extras are within the limit', () => {
+        const extras = selectExtraNuxtProcesses([
+            process('100', '/workspace'),
+            process('200', '/workspace'),
+            process('0', '/workspace'),
+        ], '/workspace');
+
+        expect(selectExcess(extras, 2)).toEqual([]);
     });
 });
 

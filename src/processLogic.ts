@@ -1,5 +1,5 @@
 import { NuxtProcess } from './types';
-import { isValidPort } from './validation';
+import { isValidPort, parsePid } from './validation';
 
 export interface ProcessTableEntry {
     pid: string;
@@ -193,6 +193,30 @@ export function selectExtraNuxtProcesses(
         }
         return !isManagedNuxtProcess(proc, managedPid);
     });
+}
+
+/**
+ * Extras that exceed `maxExtraServers`: only valid-PID entries count toward the
+ * limit, lowest PID first. Counting raw entries under-kills when an entry has an
+ * unusable PID, so the surplus is validCount - maxExtraServers.
+ */
+export function selectExcessNuxtProcesses(
+    extraProcesses: ReadonlyArray<NuxtProcess>,
+    maxExtraServers: number
+): NuxtProcess[] {
+    const valid: Array<{ proc: NuxtProcess; pid: number }> = [];
+    for (const proc of extraProcesses) {
+        let pid: number;
+        try {
+            pid = parsePid(proc.pid);
+        } catch {
+            continue;
+        }
+        valid.push({ proc, pid });
+    }
+    valid.sort((a, b) => a.pid - b.pid);
+    const surplus = valid.length - maxExtraServers;
+    return surplus > 0 ? valid.slice(0, surplus).map(entry => entry.proc) : [];
 }
 
 export function selectManagedNuxtProcess(

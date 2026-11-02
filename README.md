@@ -233,6 +233,7 @@ For specialized setups:
 ### From VSIX File
 
 ```bash
+# The VSIX name embeds the extension version (currently 0.0.8; see package.json).
 code --install-extension nuxt-dev-server-0.0.8.vsix
 ```
 
@@ -333,9 +334,22 @@ Major update with performance, security, and automation improvements:
 - Improved process killing
 - Bug fixes
 
-### 0.0.1 - 0.0.4
+### 0.0.3
 
-Initial releases with core features:
+- Updated publisher ID to `pstuart`
+- Adjusted npm scripts for better version management
+
+### 0.0.2
+
+- Added the Show All Running Instances command with a detailed output panel
+- Version detection now reports declared, installed, and running versions per server
+- Added version bump npm scripts, GitHub Actions for CI and automated marketplace publishing, and publishing documentation
+- Process detection now counts only processes listening on ports, fixing duplicate counting
+- More accurate running-version detection read from `node_modules`
+
+### 0.0.1
+
+Initial release with core features:
 - Status bar integration
 - Start/stop/restart commands
 - Multi-instance tracking and selective killing

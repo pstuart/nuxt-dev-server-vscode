@@ -118,5 +118,9 @@ Major update with performance, security, and automation improvements.
 - Process monitoring every 3 seconds
 - Output channel for dev server logs
 
+[Unreleased]: https://github.com/pstuart/nuxt-dev-server-vscode/compare/v0.0.8...HEAD
+[0.0.8]: https://github.com/pstuart/nuxt-dev-server-vscode/compare/v0.0.6...v0.0.8
+[0.0.6]: https://github.com/pstuart/nuxt-dev-server-vscode/compare/v0.0.3...v0.0.6
+[0.0.3]: https://github.com/pstuart/nuxt-dev-server-vscode/compare/v0.0.2...v0.0.3
 [0.0.2]: https://github.com/pstuart/nuxt-dev-server-vscode/compare/v0.0.1...v0.0.2
 [0.0.1]: https://github.com/pstuart/nuxt-dev-server-vscode/releases/tag/v0.0.1

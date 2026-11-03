@@ -157,6 +157,11 @@
           "default": "dev",
           "description": "Custom dev command (e.g., 'dev', 'dev:custom')"
         },
+        "nuxt-dev-server.projectDirectory": {
+          "type": "string",
+          "default": "",
+          "description": "Nuxt project directory relative to the workspace folder (e.g., 'apps/web' in a monorepo). Empty = auto-detect the Nuxt project in the workspace."
+        },
         "nuxt-dev-server.openBrowserOnStart": {
           "type": "boolean",
           "default": false,

@@ -51,6 +51,8 @@ export interface ExtensionConfig {
     updateInterval: number;
     /** Custom dev command (defaults to 'dev') */
     devCommand: string;
+    /** Explicit Nuxt project directory (empty = auto-resolve from the workspace) */
+    projectDirectory: string;
     /** Open browser automatically when server starts */
     openBrowserOnStart: boolean;
     /** Enable debug logging */

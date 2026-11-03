@@ -12,6 +12,7 @@ import {
     fileExists,
     showError,
     showInfo,
+    getProjectDirectory,
 } from './utils';
 
 interface PackageJson {
@@ -141,7 +142,9 @@ export async function showNuxtVersion(): Promise<void> {
         return;
     }
 
-    const rootPath = workspaceFolders[0].uri.fsPath;
+    // Version data belongs to the resolved Nuxt project, which may live below
+    // the workspace root in a monorepo.
+    const rootPath = await getProjectDirectory();
 
     try {
         const versionInfo = await getNuxtVersionInfo(rootPath);

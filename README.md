@@ -9,6 +9,7 @@ A Visual Studio Code extension to manage Nuxt development servers directly from 
 
 - **Status Bar Integration** - Shows the number of running Nuxt instances at a glance
 - **Start/Stop/Restart** - Control your dev server with simple commands
+- **Monorepo Support** - Resolves the Nuxt project directory (e.g., `apps/web`) and starts the dev server there
 - **Graceful Shutdown** - Tries SIGTERM before SIGKILL for cleaner process termination
 - **Process Management** - View and manage all running Nuxt instances
 - **Multi-Instance Support** - List all Nuxt servers and selectively kill specific ones
@@ -163,6 +164,11 @@ This extension contributes the following settings (access via `Preferences: Open
   - Package.json script name to run (e.g., `"dev"` or `"dev:custom"`)
   - Only alphanumeric characters, dashes, underscores, and colons are allowed
   - Must be shorter than 100 characters
+
+- **`nuxt-dev-server.projectDirectory`** (default: `""`)
+  - Nuxt project directory to start the dev server in, relative to the workspace folder (e.g., `"apps/web"` in a monorepo)
+  - Empty = auto-detect: a nuxt.config in a workspace folder is used directly; otherwise the extension searches below the workspace root (e.g. `apps/web`) and asks you to pick when several projects are found
+  - The dev server is spawned with the resolved directory as its working directory
 
 - **`nuxt-dev-server.autoStartOnOpen`** (default: `false`)
   - Automatically start the dev server when the workspace opens

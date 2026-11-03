@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ChildProcess, spawn } from 'child_process';
 import * as path from 'path';
 import { ManagedServer, PackageManager } from './types';
-import { LOCK_FILES, NUXT_CONFIG_FILES, OUTPUT_CHANNELS, DEFAULT_CONFIG, PROCESS_PATTERNS } from './constants';
+import { LOCK_FILES, OUTPUT_CHANNELS, DEFAULT_CONFIG, PROCESS_PATTERNS } from './constants';
 import {
     getOrCreateOutputChannel,
     showError,
@@ -12,7 +12,8 @@ import {
     getErrorMessage,
     getConfig,
     sleep,
-    fileExists
+    fileExists,
+    resolveProjectDirectory
 } from './utils';
 import {
     killProcessTree,
@@ -146,20 +147,6 @@ async function detectPackageManager(rootPath: string): Promise<PackageManager> {
 }
 
 /**
- * Check if workspace has a Nuxt configuration file
- */
-async function hasNuxtConfig(rootPath: string): Promise<boolean> {
-    for (const configFile of NUXT_CONFIG_FILES) {
-        const configPath = path.join(rootPath, configFile);
-        if (await fileExists(configPath)) {
-            debugLog(`Found Nuxt config: ${configFile}`);
-            return true;
-        }
-    }
-    return false;
-}
-
-/**
  * Start the dev server
  */
 export async function startDevServer(): Promise<boolean> {
@@ -185,19 +172,20 @@ async function startDevServerInternal(): Promise<boolean> {
         return false;
     }
 
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders) {
+    if (!vscode.workspace.workspaceFolders) {
         await showError('No workspace folder open');
         return false;
     }
 
-    const rootPath = workspaceFolders[0].uri.fsPath;
-
-    // Check if it's a Nuxt project (async)
-    if (!(await hasNuxtConfig(rootPath))) {
+    // The project may live below the workspace root (e.g. apps/web in a monorepo),
+    // so resolve the directory that actually contains nuxt.config.
+    const project = await resolveProjectDirectory(managedServer?.workingDir);
+    if (!project) {
         await showError('No nuxt.config file found in workspace');
         return false;
     }
+
+    const rootPath = project.dir;
 
     await showInfo('Starting Nuxt dev server...');
     debugLog(`Starting dev server in ${rootPath}`);

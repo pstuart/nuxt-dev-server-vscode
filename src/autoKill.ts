@@ -52,8 +52,14 @@ function setupFileWatcher(context: vscode.ExtensionContext): void {
         autoKillState.fileWatcher.dispose();
     }
 
-    // Watch for file changes in the workspace (for idle detection)
-    const pattern = new vscode.RelativePattern(workspaceFolders[0], '**/*');
+    // Watch the managed project's directory when known (it may be a subfolder
+    // of the workspace in a monorepo), otherwise the workspace root.
+    const managedDir = getManagedServer()?.workingDir;
+    const watchFolder = managedDir
+        ? workspaceFolders.find(folder => folder.uri.fsPath === managedDir)
+            ?? { uri: vscode.Uri.file(managedDir), name: managedDir, index: 0 }
+        : workspaceFolders[0];
+    const pattern = new vscode.RelativePattern(watchFolder, '**/*');
     autoKillState.fileWatcher = vscode.workspace.createFileSystemWatcher(pattern);
 
     // Update activity on any file change
@@ -73,6 +79,15 @@ export function onServerStart(): void {
     autoKillState.startTime = now;
     autoKillState.lastActivity = now;
     debugLog(`Auto-kill tracking started at ${new Date(now).toISOString()}`);
+    // The managed server may live in a subfolder of the workspace; watch its
+    // directory so idle detection tracks the project that is actually running.
+    // setupFileWatcher skips the watcher when the server was started without
+    // workspace folders, so this only resets an existing one.
+    if (autoKillState.fileWatcher) {
+        autoKillState.fileWatcher.dispose();
+        autoKillState.fileWatcher = null;
+        debugLog('File watcher reset for managed server directory');
+    }
 }
 
 /**

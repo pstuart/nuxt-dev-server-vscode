@@ -169,6 +169,11 @@ This extension contributes the following settings (access via `Preferences: Open
 
 - **`nuxt-dev-server.openBrowserOnStart`** (default: `false`)
   - Open the browser automatically when the server starts
+  - The destination follows `nuxt-dev-server.browserType`
+
+- **`nuxt-dev-server.browserType`** (default: `"external"`)
+  - Where `Nuxt: Open in Browser` and `openBrowserOnStart` open the dev server URL
+  - `"external"` opens the system browser; `"embedded"` opens a VS Code Simple Browser tab (requires a VS Code build that provides the built-in `simpleBrowser.show` command)
 
 - **`nuxt-dev-server.debug`** (default: `false`)
   - Enable debug logging to the output channel

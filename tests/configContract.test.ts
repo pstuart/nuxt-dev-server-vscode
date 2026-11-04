@@ -16,11 +16,15 @@ vi.mock('vscode', async () => {
     const mod = mockVscodeModule() as {
         window: Record<string, unknown>;
         workspace: { getConfiguration: unknown };
+        commands?: Record<string, unknown>;
     };
     mod.workspace.getConfiguration = () => ({
         get: (key: string, fallback: unknown) =>
             Object.prototype.hasOwnProperty.call(mockSettings, key) ? mockSettings[key] : fallback,
     });
+    // utils.ts now imports vscode.commands for openServerUrl; the shared mock
+    // predates that surface, so add it locally rather than editing the fixture.
+    mod.commands = { executeCommand: vi.fn(async () => undefined) };
     return mod;
 });
 
@@ -34,6 +38,7 @@ interface SchemaProperty {
     default?: unknown;
     minimum?: number;
     maximum?: number;
+    enum?: unknown[];
 }
 
 interface NumericContract {
@@ -53,6 +58,18 @@ const DOCUMENTED: Record<string, NumericContract> = {
     maxExtraServers: { default: 0, minimum: 0 },
 };
 
+// The publicly documented string-enum contract, pinned so a silent edit to
+// package.json, getConfig(), or README fails at least one of the checks below.
+const DOCUMENTED_ENUMS: Record<string, { default: string; values: string[] }> = {
+    browserType: { default: 'external', values: ['external', 'embedded'] },
+    preferredPackageManager: { default: 'auto', values: ['auto', 'npm', 'yarn', 'pnpm', 'bun'] },
+};
+
+// Settings whose getConfig() value is validated against the schema enum and
+// falls back to the default. preferredPackageManager is intentionally passed
+// through verbatim (detectPackageManager reports the unknown value at use time).
+const ENUM_VALIDATED_BY_GETCONFIG: readonly string[] = ['browserType'];
+
 const SECTION_PREFIX = 'nuxt-dev-server.';
 const properties = packageJson.contributes.configuration.properties as Record<string, SchemaProperty>;
 const readme = readFileSync(new URL('../README.md', import.meta.url), 'utf8');
@@ -67,6 +84,12 @@ function shortName(key: string): string {
 function numericProperties(): Array<{ name: string; schema: SchemaProperty }> {
     return Object.entries(properties)
         .filter(([, schema]) => schema.type === 'number')
+        .map(([key, schema]) => ({ name: shortName(key), schema }));
+}
+
+function enumProperties(): Array<{ name: string; schema: SchemaProperty }> {
+    return Object.entries(properties)
+        .filter(([, schema]) => schema.type === 'string' && Array.isArray(schema.enum))
         .map(([key, schema]) => ({ name: shortName(key), schema }));
 }
 
@@ -107,6 +130,47 @@ describe('settings schema matches the documented numeric contract', () => {
     it('every contributed setting uses the nuxt-dev-server. section prefix', () => {
         for (const key of Object.keys(properties)) {
             expect(key.startsWith(SECTION_PREFIX)).toBe(true);
+        }
+    });
+});
+
+describe('settings schema matches the documented string-enum contract', () => {
+    it('contributes exactly the documented enum settings with matching default and values', () => {
+        const enums = enumProperties();
+        expect(enums.map(({ name }) => name).sort()).toEqual(Object.keys(DOCUMENTED_ENUMS).sort());
+        for (const { name, schema } of enums) {
+            const doc = DOCUMENTED_ENUMS[name];
+            expect(schema.default, `${name} default`).toBe(doc.default);
+            expect([...(schema.enum as string[])].sort(), `${name} values`).toEqual([...doc.values].sort());
+        }
+    });
+
+    it('getConfig() returns the schema default for every enum setting when nothing is configured', () => {
+        for (const { name, schema } of enumProperties()) {
+            expect(getConfigWith({})[name], `${name} default`).toBe(schema.default);
+        }
+    });
+
+    it('getConfig() passes a valid enum value through and falls back to the default for an invalid one', () => {
+        for (const { name, schema } of enumProperties()) {
+            for (const value of schema.enum as string[]) {
+                expect(getConfigWith({ [name]: value })[name], `${name} ${value}`).toBe(value);
+            }
+            if (ENUM_VALIDATED_BY_GETCONFIG.includes(name)) {
+                expect(getConfigWith({ [name]: 'not-a-valid-value' })[name], `${name} invalid fallback`).toBe(schema.default);
+            }
+        }
+    });
+
+    it('README documents every enum setting with its schema default', () => {
+        for (const { name, schema } of enumProperties()) {
+            const block = readmeBlock(name);
+            expect(block).toMatch(/^  - /m);
+            for (const value of schema.enum as string[]) {
+                expect(block, `${name} documents ${value}`).toMatch(
+                    new RegExp(`(^|[^A-Za-z])["'\`]${value}["'\`]`),
+                );
+            }
         }
     });
 });

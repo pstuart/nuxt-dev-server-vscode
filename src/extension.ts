@@ -9,7 +9,7 @@ import {
     killProcess
 } from './processManager';
 import { COMMANDS, OUTPUT_CHANNELS } from './constants';
-import { getOrCreateOutputChannel, showInfo, showWarning, showError, debugLog, disposeAllOutputChannels, getConfig } from './utils';
+import { getOrCreateOutputChannel, showInfo, showWarning, showError, debugLog, disposeAllOutputChannels, getConfig, openServerUrl } from './utils';
 import { ProcessQuickPickItem } from './types';
 import { initializeAutoKill, cleanupAutoKill } from './autoKill';
 import { refuseIfUntrusted } from './workspaceTrust';
@@ -356,7 +356,7 @@ async function openInBrowser(): Promise<void> {
 
         if (processes.length > 0 && processes[0].port) {
             const url = `http://localhost:${processes[0].port}`;
-            void vscode.env.openExternal(vscode.Uri.parse(url));
+            void openServerUrl(url);
             return;
         }
 
@@ -364,5 +364,5 @@ async function openInBrowser(): Promise<void> {
         return;
     }
 
-    void vscode.env.openExternal(vscode.Uri.parse(managedServer.url));
+    void openServerUrl(managedServer.url);
 }

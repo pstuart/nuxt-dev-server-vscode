@@ -86,6 +86,7 @@ export function getConfig(): ExtensionConfig {
         devCommand: config.get('devCommand', 'dev'),
         projectDirectory: config.get('projectDirectory', ''),
         openBrowserOnStart: config.get('openBrowserOnStart', false),
+        browserType: config.get<'external' | 'embedded'>('browserType', 'external') === 'embedded' ? 'embedded' : 'external',
         debug: config.get('debug', false),
         autoKillTimeout: clampConfigNumber(config.get('autoKillTimeout', 0), 0, Number.POSITIVE_INFINITY, 0),
         autoKillIdleTime: clampConfigNumber(config.get('autoKillIdleTime', 0), 0, Number.POSITIVE_INFINITY, 0),
@@ -93,6 +94,19 @@ export function getConfig(): ExtensionConfig {
         maxExtraServers: clampConfigNumber(config.get('maxExtraServers', 0), 0, Number.POSITIVE_INFINITY, 0),
         gracefulShutdownTimeout: clampConfigNumber(config.get('gracefulShutdownTimeout', 5000), 1000, 30000, 5000),
     };
+}
+
+/**
+ * Open a server URL according to the configured browserType.
+ * 'embedded' uses VS Code's built-in Simple Browser; anything else opens the
+ * system browser. Both return the command/thenable so callers can await it.
+ */
+export function openServerUrl(url: string): Thenable<unknown> {
+    const config = getConfig();
+    if (config.browserType === 'embedded') {
+        return vscode.commands.executeCommand('simpleBrowser.show', url);
+    }
+    return vscode.env.openExternal(vscode.Uri.parse(url));
 }
 
 /**

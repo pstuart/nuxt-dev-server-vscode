@@ -13,6 +13,7 @@ import {
     getConfig,
     sleep,
     fileExists,
+    openServerUrl,
     resolveProjectDirectory
 } from './utils';
 import {
@@ -332,7 +333,7 @@ async function startDevServerInternal(): Promise<boolean> {
         void Promise.resolve(showInfo(`Nuxt dev server started on port ${actualPort}`)).catch(() => {});
 
         if (config.openBrowserOnStart) {
-            void vscode.env.openExternal(vscode.Uri.parse(managedServer.url));
+            void openServerUrl(managedServer.url);
         }
 
         // Notify auto-kill module that server has started

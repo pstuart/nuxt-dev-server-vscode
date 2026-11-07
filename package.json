@@ -167,6 +167,19 @@
           "default": false,
           "description": "Open browser automatically when server starts"
         },
+        "nuxt-dev-server.browserType": {
+          "type": "string",
+          "enum": [
+            "external",
+            "embedded"
+          ],
+          "enumDescriptions": [
+            "Open the dev server URL in the system browser",
+            "Open the dev server URL in the VS Code Simple Browser tab"
+          ],
+          "default": "external",
+          "description": "Where to open the dev server URL: 'external' uses the system browser, 'embedded' uses the VS Code Simple Browser"
+        },
         "nuxt-dev-server.debug": {
           "type": "boolean",
           "default": false,

@@ -55,6 +55,8 @@ export interface ExtensionConfig {
     projectDirectory: string;
     /** Open browser automatically when server starts */
     openBrowserOnStart: boolean;
+    /** Where to open the server URL: system browser or VS Code Simple Browser */
+    browserType: 'external' | 'embedded';
     /** Enable debug logging */
     debug: boolean;
     /** Auto-kill server after X minutes (0 = disabled) */

@@ -12,14 +12,32 @@ const mocks = vi.hoisted(() => ({
     outputChannel: { clear: vi.fn(), show: vi.fn(), append: vi.fn(), appendLine: vi.fn() },
     browserType: 'external',
     showNotifications: true,
+    // '' → devServer falls through to workspace.findFiles discovery; 'apps/web'
+    // exercises the explicit nuxt-dev-server.projectDirectory setting path.
+    projectDirectory: '',
+    // fsPath values returned by the mocked workspace.findFiles call.
+    foundConfigPaths: [] as string[],
 }));
 
 vi.mock('vscode', () => ({
-    workspace: { workspaceFolders: [{ uri: { fsPath: '/fixture' } }] },
+    workspace: {
+        workspaceFolders: [{ uri: { fsPath: '/fixture' } }],
+        findFiles: async (...args: unknown[]) =>
+            (args[2] as string[] ?? mocks.foundConfigPaths).map((fsPath) => ({ fsPath })),
+        // devServer.resolveProjectDirectory reads nuxt-dev-server.projectDirectory
+        // directly from the workspace configuration.
+        getConfiguration: () => ({
+            get: (key: string, fallback: unknown) =>
+                key === 'projectDirectory' ? mocks.projectDirectory : fallback,
+        }),
+    },
     env: { openExternal: mocks.openExternal },
     commands: { executeCommand: mocks.executeCommand },
     window: { showWarningMessage: mocks.showWarning },
     Uri: { parse: (url: string) => url },
+    RelativePattern: class {
+        constructor(public baseUri: unknown, public pattern: string) {}
+    },
 }));
 vi.mock('child_process', () => ({ spawn: mocks.spawn }));
 vi.mock('../src/utils', () => ({
@@ -65,6 +83,8 @@ describe('server startup', () => {
     };
 
     beforeEach(async () => {
+        mocks.projectDirectory = '';
+        mocks.foundConfigPaths = [];
         mocks.spawn.mockReset();
         mocks.openExternal.mockReset();
         mocks.executeCommand.mockReset();
@@ -90,6 +110,42 @@ describe('server startup', () => {
         const { clearManagedServer } = await import('../src/devServer');
         clearManagedServer();
     });
+
+    it('starts in the nested project directory when nuxt.config lives only at apps/web', async () => {
+        const { startDevServer, clearManagedServer, getManagedServer } = await import('../src/devServer');
+        // Root folder has no nuxt.config; the only config sits at apps/web/nuxt.config.ts.
+        mocks.foundConfigPaths = ['/fixture/apps/web/nuxt.config.ts'];
+        try {
+            expect(await startDevServer()).toBe(true);
+            // Spawn used the resolved project directory, not the bare workspace root.
+            expect(mocks.spawn).toHaveBeenCalledTimes(1);
+            const [, , options] = mocks.spawn.mock.calls[0] as [string, string[], { cwd: string }];
+            expect(options.cwd).toBe('/fixture/apps/web');
+            // managedServer.workingDir carries the same resolved directory.
+            expect(getManagedServer()?.workingDir).toBe('/fixture/apps/web');
+            // The status bar reflects the port parsed from the child's stdout.
+            child.stdout.emit('data', Buffer.from('http://localhost:3000'));
+            expect(getManagedServer()?.port).toBe(3000);
+            expect(mocks.showInfo).toHaveBeenCalledWith('Nuxt dev server started on port 3000');
+        } finally {
+            clearManagedServer();
+        }
+    }, 1000);
+
+    it('honours the explicit projectDirectory setting ahead of discovery', async () => {
+        const { startDevServer, clearManagedServer, getManagedServer } = await import('../src/devServer');
+        mocks.projectDirectory = 'apps/web';
+        // Both shapes agree on apps/web: the setting wins and discovery is skipped.
+        mocks.foundConfigPaths = ['/fixture/apps/web/nuxt.config.ts'];
+        try {
+            expect(await startDevServer()).toBe(true);
+            const [, , options] = mocks.spawn.mock.calls[0] as [string, string[], { cwd: string }];
+            expect(options.cwd).toBe('/fixture/apps/web');
+            expect(getManagedServer()?.workingDir).toBe('/fixture/apps/web');
+        } finally {
+            clearManagedServer();
+        }
+    }, 1000);
 
     it('finishes, opens the browser, and arms auto-kill while the started notification stays open', async () => {
         const { startDevServer, clearManagedServer } = await import('../src/devServer');

@@ -217,6 +217,61 @@ async function hasNuxtConfig(rootPath: string): Promise<boolean> {
 }
 
 /**
+ * Relative (from the workspace root) path of a discovered nuxt.config.
+ * `workspace.findFiles` yields relative paths for a single-root workspace and
+ * absolute ones for a multi-root workspace, so strip the root prefix either way.
+ */
+function relativeConfigPath(rootPath: string, uri: vscode.Uri): string {
+    const raw = uri.fsPath;
+    const prefix = rootPath.endsWith('/') ? rootPath : `${rootPath}/`;
+    return raw.startsWith(prefix) ? raw.slice(prefix.length) : raw;
+}
+
+/**
+ * Resolve the directory that holds the Nuxt project for the given workspace root.
+ *
+ * A monorepo keeps its config below the folder VS Code opens (root without
+ * nuxt.config plus a nested `apps/web/nuxt.config.ts`), so the root itself is not
+ * the project directory. Order: explicit `nuxt-dev-server.projectDirectory`, else a
+ * single discovered nuxt.config, else the root when it carries a config itself.
+ */
+async function resolveProjectDirectory(rootPath: string): Promise<string | null> {
+    const configured = vscode.workspace.getConfiguration('nuxt-dev-server').get<string>('projectDirectory', '');
+    if (configured) {
+        const resolved = path.isAbsolute(configured) ? configured : path.join(rootPath, configured);
+        if (await hasNuxtConfig(resolved)) {
+            debugLog(`Project directory from setting: ${resolved}`);
+            return resolved;
+        }
+        await showWarning(`nuxt-dev-server.projectDirectory "${configured}" has no nuxt.config file. Falling back to discovery.`);
+    }
+
+    let uris: readonly vscode.Uri[];
+    try {
+        uris = await vscode.workspace.findFiles(
+            new vscode.RelativePattern(rootPath, `{${NUXT_CONFIG_FILES.join(',')}}`),
+            '**/node_modules/**',
+        );
+    } catch (error) {
+        debugLog('findFiles failed:', getErrorMessage(error));
+        uris = [];
+    }
+
+    const candidates = uris
+        .map((uri) => relativeConfigPath(rootPath, uri))
+        .filter((rel) => rel.length > 0 && rel !== '.')
+        .sort();
+
+    if (candidates.length === 0) {
+        return (await hasNuxtConfig(rootPath)) ? rootPath : null;
+    }
+
+    const resolved = path.dirname(path.join(rootPath, candidates[0]));
+    debugLog(`Discovered Nuxt project directory: ${resolved}`);
+    return resolved;
+}
+
+/**
  * Start the dev server
  */
 export async function startDevServer(): Promise<boolean> {
@@ -250,17 +305,19 @@ async function startDevServerInternal(): Promise<boolean> {
 
     const rootPath = workspaceFolders[0].uri.fsPath;
 
-    // Check if it's a Nuxt project (async)
-    if (!(await hasNuxtConfig(rootPath))) {
+    // Resolve the Nuxt project directory: the workspace root itself, or the nested
+    // folder holding nuxt.config (e.g. a monorepo `apps/web`).
+    const projectPath = await resolveProjectDirectory(rootPath);
+    if (!projectPath) {
         await showError('No nuxt.config file found in workspace');
         return false;
     }
 
     await showInfo('Starting Nuxt dev server...');
-    debugLog(`Starting dev server in ${rootPath}`);
+    debugLog(`Starting dev server in ${projectPath}`);
 
     const config = getConfig();
-    const packageManager = await detectPackageManager(rootPath);
+    const packageManager = await detectPackageManager(projectPath);
     const devCommand = config.devCommand;
 
     // Validate dev command to prevent injection
@@ -278,7 +335,7 @@ async function startDevServerInternal(): Promise<boolean> {
     // Spawn WITHOUT shell: true for security
     // This prevents command injection attacks
     const childProcess = spawn(packageManager, args, {
-        cwd: rootPath,
+        cwd: projectPath,
         shell: false,  // SECURITY: Don't use shell to prevent injection
         detached: false,
         env: { ...process.env },
@@ -366,7 +423,7 @@ async function startDevServerInternal(): Promise<boolean> {
     // Create managed server instance
     managedServer = {
         process: childProcess,
-        workingDir: rootPath,
+        workingDir: projectPath,
         port: detectedPort,
         url: detectedUrl
     };
@@ -381,7 +438,7 @@ async function startDevServerInternal(): Promise<boolean> {
             outputPort.promise,
             waitForProcessTreePort(
                 childProcess.pid,
-                rootPath,
+                projectPath,
                 detectedPort,
                 DEFAULT_CONFIG.SERVER_START_TIMEOUT_MS,
                 discoveryController.signal

@@ -58,6 +58,56 @@ function childHandleExited(child: ChildProcess): boolean {
 let startingServer = false;
 
 /**
+ * Per-child bookkeeping for the unexpected-exit warning. `close` and `exit` both
+ * fire for one child, so `warned` keeps the announcement to exactly one warning,
+ * and `planned` marks exits driven by our own stop/restart/auto-kill paths so the
+ * warning is suppressed there.
+ */
+interface ChildExitState {
+    warned: boolean;
+    planned: boolean;
+}
+const childExitState = new WeakMap<ChildProcess, ChildExitState>();
+
+const RESTART_ACTION = 'Restart';
+const SHOW_OUTPUT_ACTION = 'Show Output';
+
+/**
+ * Announce an unexpected child exit exactly once (both 'close' and 'exit' fire for
+ * one child). Suppressed for planned exits (stop/restart/auto-kill) and, via
+ * showWarning, when showNotifications is false. 'Restart' starts a fresh managed
+ * server; 'Show Output' reveals the "Nuxt Dev Server" output channel.
+ */
+function announceUnexpectedExit(
+    child: ChildProcess,
+    code: number | null,
+    outputChannel: vscode.OutputChannel
+): void {
+    // The first close/exit event for a freshly spawned child is the unexpected one;
+    // `clearManagedServerIfCurrent` runs after it and marks the sibling event planned
+    // so the pair produces exactly one warning. stopDevServer/restart/auto-kill mark
+    // their teardown planned up front, so those exits stay silent.
+    let state = childExitState.get(child);
+    if (!state) {
+        state = { warned: false, planned: false };
+        childExitState.set(child, state);
+    }
+    if (state.warned || state.planned) {
+        return;
+    }
+    state.warned = true;
+    void Promise.resolve(
+        showWarning(`Nuxt dev server exited unexpectedly (code ${code})`, RESTART_ACTION, SHOW_OUTPUT_ACTION)
+    ).then((choice) => {
+        if (choice === RESTART_ACTION) {
+            void startDevServer();
+        } else if (choice === SHOW_OUTPUT_ACTION) {
+            outputChannel.show(true);
+        }
+    }).catch(() => {});
+}
+
+/**
  * Get the currently managed server
  */
 export function getManagedServer(): ManagedServer | null {
@@ -95,6 +145,12 @@ function clearManagedServerIfCurrent(child: ChildProcess): void {
         forceStatusBarUpdate();
         // Clear auto-kill state when the managed server goes away
         onServerStop();
+        // This exit came from one of our own stop/restart/auto-kill paths, so the
+        // close/exit handlers must not announce it as unexpected.
+        const state = childExitState.get(child);
+        if (state) {
+            state.planned = true;
+        }
     }
 }
 
@@ -282,6 +338,7 @@ async function startDevServerInternal(): Promise<boolean> {
         debugLog(`Server process closed with code ${code}`);
         outputChannel.appendLine(`\nServer process closed with code ${code}`);
 
+        announceUnexpectedExit(childProcess, code, outputChannel);
         clearManagedServerIfCurrent(childProcess);
         outputPort.rejectIfPending(`server process closed with code ${code}`);
     });
@@ -291,6 +348,7 @@ async function startDevServerInternal(): Promise<boolean> {
         debugLog(`Server process exited with code ${code}, signal ${signal}`);
         outputChannel.appendLine(`\nServer process exited with code ${code}, signal ${signal}`);
 
+        announceUnexpectedExit(childProcess, code, outputChannel);
         clearManagedServerIfCurrent(childProcess);
         outputPort.rejectIfPending(`server process exited with code ${code}, signal ${signal}`);
     });
@@ -382,7 +440,19 @@ export async function stopDevServer(): Promise<boolean> {
         return false;
     }
 
-    const pid = managedServer.process.pid;
+    // Our own teardown owns this child's exit: mark it planned before killing so the
+    // close/exit handlers (stop, restart and auto-kill all funnel through here)
+    // skip the unexpected-exit warning.
+    const stoppingHandle = managedServer.process;
+    let stoppingState = childExitState.get(stoppingHandle);
+    if (!stoppingState) {
+        stoppingState = { warned: false, planned: true };
+        childExitState.set(stoppingHandle, stoppingState);
+    } else {
+        stoppingState.planned = true;
+    }
+
+    const pid = stoppingHandle.pid;
     const workingDir = managedServer.workingDir;
 
     if (!pid) {

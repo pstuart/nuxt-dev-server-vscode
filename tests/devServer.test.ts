@@ -122,6 +122,40 @@ describe('server startup', () => {
         }
     }, 1000);
 
+    it('routes the detected server URL to the embedded Simple Browser once when openBrowserOnStart is enabled', async () => {
+        // openBrowserOnStart is true in the shared getConfig mock; only browserType flips.
+        mocks.browserType = 'embedded';
+        const { startDevServer, clearManagedServer } = await import('../src/devServer');
+        try {
+            expect(await startDevServer()).toBe(true);
+            // Port detection happened inside startDevServer (waitForProcessTreePort mock
+            // resolves 3000), so the embedded branch fired exactly once with that URL.
+            expect(mocks.executeCommand).toHaveBeenCalledExactlyOnceWith(
+                'simpleBrowser.show', 'http://localhost:3000');
+            expect(mocks.openExternal).not.toHaveBeenCalled();
+            // The later stdout chunk must not re-open the preview.
+            child.stdout.emit('data', Buffer.from('http://localhost:3000'));
+            expect(mocks.executeCommand).toHaveBeenCalledTimes(1);
+        } finally {
+            clearManagedServer();
+        }
+    }, 1000);
+
+    it('routes the detected server URL to the external browser when browserType stays at its default', async () => {
+        // mocks.browserType is reset to 'external' in beforeEach — the default branch.
+        const { startDevServer, clearManagedServer } = await import('../src/devServer');
+        try {
+            expect(await startDevServer()).toBe(true);
+            expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith('http://localhost:3000');
+            expect(mocks.executeCommand).not.toHaveBeenCalled();
+            // The later stdout chunk must not re-open the browser.
+            child.stdout.emit('data', Buffer.from('http://localhost:3000'));
+            expect(mocks.openExternal).toHaveBeenCalledTimes(1);
+        } finally {
+            clearManagedServer();
+        }
+    }, 1000);
+
     it('warns once with the exit code plus Restart and Show Output when the child dies outside our control', async () => {
         const { startDevServer, clearManagedServer } = await import('../src/devServer');
         mocks.showWarning.mockResolvedValue(undefined);

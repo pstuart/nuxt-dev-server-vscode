@@ -22,8 +22,14 @@ const mocks = vi.hoisted(() => ({
 vi.mock('vscode', () => ({
     workspace: {
         workspaceFolders: [{ uri: { fsPath: '/fixture' } }],
-        findFiles: async (...args: unknown[]) =>
-            (args[2] as string[] ?? mocks.foundConfigPaths).map((fsPath) => ({ fsPath })),
+        // Nested configs are returned only for a recursive glob. A root-only
+        // pattern (no `**`) must miss apps/web/nuxt.config.ts so the discovery
+        // test fails instead of passing by accident.
+        findFiles: async (include: { pattern?: string } | string) => {
+            const pattern = typeof include === 'string' ? include : include?.pattern ?? '';
+            if (!pattern.includes('**')) return [];
+            return mocks.foundConfigPaths.map((fsPath) => ({ fsPath }));
+        },
         // devServer.resolveProjectDirectory reads nuxt-dev-server.projectDirectory
         // directly from the workspace configuration.
         getConfiguration: () => ({

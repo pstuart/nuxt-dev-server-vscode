@@ -249,7 +249,10 @@ async function resolveProjectDirectory(rootPath: string): Promise<string | null>
     let uris: readonly vscode.Uri[];
     try {
         uris = await vscode.workspace.findFiles(
-            new vscode.RelativePattern(rootPath, `{${NUXT_CONFIG_FILES.join(',')}}`),
+            new vscode.RelativePattern(
+                rootPath,
+                `**/{${NUXT_CONFIG_FILES.join(',')}}`,
+            ),
             '**/node_modules/**',
         );
     } catch (error) {

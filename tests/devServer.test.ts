@@ -199,6 +199,40 @@ describe('server startup', () => {
         expect(mocks.onServerStart).toHaveBeenCalledTimes(1);
     }, 1000);
 
+    it.each(['stdout', 'stderr'] as const)('keeps a split %s URL pending when the other stream emits a newline', async (stream) => {
+        const { startDevServer, getManagedServer } = await import('../src/devServer');
+        let pollingStarted!: () => void;
+        const pollingReady = new Promise<void>(resolve => { pollingStarted = resolve; });
+        mocks.waitForPort.mockImplementation(() => {
+            pollingStarted();
+            return new Promise(() => {});
+        });
+        let settled = false;
+        const startup = startDevServer().then(result => {
+            settled = true;
+            return result;
+        });
+        await pollingReady;
+        child[stream].emit('data', Buffer.from('Local: https://localhost:44'));
+        child[stream === 'stdout' ? 'stderr' : 'stdout'].emit('data', Buffer.from('\nwarning\n'));
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(settled).toBe(false);
+        expect(getManagedServer()?.port).toBe(3000);
+        expect(getManagedServer()?.url).toBe('http://localhost:3000');
+        expect(mocks.openExternal).not.toHaveBeenCalled();
+        expect(mocks.executeCommand).not.toHaveBeenCalled();
+        expect(mocks.onServerStart).not.toHaveBeenCalled();
+        expect(mocks.showInfo).not.toHaveBeenCalledWith('Nuxt dev server started on port 44');
+
+        child[stream].emit('data', Buffer.from('43/\n'));
+        expect(await startup).toBe(true);
+        expect(getManagedServer()?.port).toBe(4443);
+        expect(getManagedServer()?.url).toBe('https://localhost:4443');
+        expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith('https://localhost:4443');
+        expect(mocks.onServerStart).toHaveBeenCalledTimes(1);
+        expect(mocks.showInfo).toHaveBeenCalledWith('Nuxt dev server started on port 4443');
+    }, 1000);
+
     it('finishes a port split across output chunks', async () => {
         const { startDevServer, getManagedServer } = await import('../src/devServer');
         await startDevServer();

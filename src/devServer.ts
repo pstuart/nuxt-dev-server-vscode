@@ -367,16 +367,17 @@ async function startDevServerInternal(): Promise<boolean> {
     let detectedPort = config.port ?? config.defaultPort;
     let detectedUrl = fallbackServerUrl(detectedPort, config);
     let printedUrl: ReturnType<typeof parsePrintedServerUrl> = null;
-    let outputBuffer = '';
+    const outputBuffers = { stdout: '', stderr: '' };
     const outputPort = createOutputPortProbe();
 
-    // Both streams can carry Nuxt's banner. Keep a bounded tail for split chunks.
-    const handleOutput = (data: Buffer): void => {
+    // Both streams can carry Nuxt's banner, but only the same stream can
+    // complete a split URL. Keep bounded tails and share printed Local preference.
+    const handleOutput = (stream: keyof typeof outputBuffers, data: Buffer): void => {
         const output = data.toString();
         outputChannel.append(output);
 
-        outputBuffer = (outputBuffer + output).slice(-16384);
-        const parsed = parsePrintedServerUrl(outputBuffer, true);
+        outputBuffers[stream] = (outputBuffers[stream] + output).slice(-16384);
+        const parsed = parsePrintedServerUrl(outputBuffers[stream], true);
         if (parsed && (!printedUrl || (!printedUrl.local && parsed.local) ||
             (parsed.local === printedUrl.local && parsed.url.startsWith(printedUrl.url) && parsed.url !== printedUrl.url))) {
             printedUrl = parsed;
@@ -391,8 +392,8 @@ async function startDevServerInternal(): Promise<boolean> {
             debugLog(`Detected server port: ${detectedPort}`);
         }
     };
-    childProcess.stdout?.on('data', handleOutput);
-    childProcess.stderr?.on('data', handleOutput);
+    childProcess.stdout?.on('data', (data: Buffer) => handleOutput('stdout', data));
+    childProcess.stderr?.on('data', (data: Buffer) => handleOutput('stderr', data));
 
     // Handle process close
     childProcess.on('close', (code) => {

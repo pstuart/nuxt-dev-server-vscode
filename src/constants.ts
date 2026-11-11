@@ -10,13 +10,6 @@ export const DEFAULT_CONFIG = {
 } as const;
 
 /**
- * Process detection patterns
- */
-export const PROCESS_PATTERNS = {
-    PORT_REGEX: /http:\/\/localhost:(\d+)/,
-} as const;
-
-/**
  * Lock files for package manager detection
  */
 export const LOCK_FILES = {

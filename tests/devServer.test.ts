@@ -3,6 +3,12 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     showInfo: vi.fn(),
+    showError: vi.fn(),
+    waitForPort: vi.fn(),
+    port: null as unknown,
+    host: '' as unknown,
+    https: false as unknown,
+    manager: 'npm',
     showWarning: vi.fn(),
     onServerStart: vi.fn(),
     openExternal: vi.fn(),
@@ -49,7 +55,10 @@ vi.mock('child_process', () => ({ spawn: mocks.spawn }));
 vi.mock('../src/utils', () => ({
     getConfig: () => ({
         defaultPort: 3000,
-        preferredPackageManager: 'npm',
+        port: mocks.port,
+        host: mocks.host,
+        https: mocks.https,
+        preferredPackageManager: mocks.manager,
         devCommand: 'dev',
         openBrowserOnStart: true,
         browserType: mocks.browserType,
@@ -63,7 +72,7 @@ vi.mock('../src/utils', () => ({
     showWarning: (message: string, ...actions: string[]) => mocks.showNotifications
         ? mocks.showWarning(message, ...actions)
         : Promise.resolve(undefined),
-    showError: vi.fn(), debugLog: vi.fn(), getErrorMessage: String, sleep: vi.fn(),
+    showError: mocks.showError, debugLog: vi.fn(), getErrorMessage: String, sleep: vi.fn(),
     // Mirrors src/utils.ts: embedded routes through Simple Browser, anything else
     // through openExternal. The embedded test below flips mocks.browserType and
     // asserts the destination actually changes.
@@ -72,7 +81,7 @@ vi.mock('../src/utils', () => ({
         : mocks.openExternal(url),
 }));
 vi.mock('../src/processManager', () => ({
-    waitForProcessTreePort: async () => 3000,
+    waitForProcessTreePort: mocks.waitForPort,
     killProcessTree: vi.fn(),
     killProcessesByWorkingDir: mocks.killProcessesByWorkingDir,
     verifyProcessTerminated: async () => true,
@@ -89,6 +98,12 @@ describe('server startup', () => {
     };
 
     beforeEach(async () => {
+        mocks.port = null;
+        mocks.host = '';
+        mocks.https = false;
+        mocks.manager = 'npm';
+        mocks.showError.mockReset();
+        mocks.waitForPort.mockReset().mockResolvedValue(3000);
         mocks.projectDirectory = '';
         mocks.foundConfigPaths = [];
         mocks.spawn.mockReset();
@@ -115,6 +130,60 @@ describe('server startup', () => {
         // Managed-server state lives in the module; drop it between cases.
         const { clearManagedServer } = await import('../src/devServer');
         clearManagedServer();
+    });
+
+    it.each(['https://localhost:3000', 'http://127.0.0.1:4000', 'https://dev.local:4443', 'http://[::1]:3001'])(
+        'uses the printed URL %s immediately, even when polling is pending', async (url) => {
+            const { startDevServer, getManagedServer } = await import('../src/devServer');
+            mocks.waitForPort.mockImplementation(() => {
+                child.stdout.emit('data', Buffer.from(`Network: http://192.168.1.2:9999/\n  Local: ${url}/\n`));
+                return new Promise(() => {});
+            });
+            expect(await startDevServer()).toBe(true);
+            expect(getManagedServer()?.url).toBe(url);
+            expect(getManagedServer()?.port).toBe(Number(url.match(/:(\d+)$/)?.[1]));
+            expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith(url);
+        }, 1000);
+
+    it('handles ANSI, split stderr output and preserves HTTPS after polling wins', async () => {
+        const { startDevServer, getManagedServer } = await import('../src/devServer');
+        expect(await startDevServer()).toBe(true);
+        child.stderr.emit('data', Buffer.from('\x1b[32mLocal: https://[::'));
+        child.stderr.emit('data', Buffer.from('1]:4443/\x1b[0m\n'));
+        expect(getManagedServer()?.url).toBe('https://[::1]:4443');
+        expect(getManagedServer()?.port).toBe(4443);
+    });
+
+    it.each(['npm', 'yarn', 'pnpm', 'bun'])('forwards validated overrides via %s and honors polling fallback', async (manager) => {
+        const { startDevServer, getManagedServer } = await import('../src/devServer');
+        mocks.manager = manager;
+        mocks.port = 4443;
+        mocks.host = '[::1]';
+        mocks.https = true;
+        mocks.waitForPort.mockResolvedValue(4444);
+        expect(await startDevServer()).toBe(true);
+        const flags = ['--port', '4443', '--host', '::1', '--https'];
+        expect(mocks.spawn.mock.calls[0][1]).toEqual(manager === 'npm' ? ['run', 'dev', '--', ...flags] : ['dev', ...flags]);
+        expect(mocks.waitForPort.mock.calls[0][2]).toBe(4443);
+        expect(getManagedServer()?.url).toBe('https://[::1]:4444');
+        expect(mocks.openExternal).toHaveBeenCalledExactlyOnceWith('https://[::1]:4444');
+    });
+
+    it.each([
+        ['host', 'localhost;touch /tmp/no'], ['host', '--help'], ['host', 'http://localhost'],
+        ['port', 0], ['port', 65536], ['port', 3.5], ['port', '4443'], ['https', 'true'],
+    ])('rejects invalid %s override %s before spawning', async (key, value) => {
+        const { startDevServer } = await import('../src/devServer');
+        Object.assign(mocks, { [key]: value });
+        expect(await startDevServer()).toBe(false);
+        expect(mocks.spawn).not.toHaveBeenCalled();
+        expect(mocks.showError).toHaveBeenCalled();
+    });
+
+    it('leaves default CLI arguments unchanged', async () => {
+        const { startDevServer } = await import('../src/devServer');
+        expect(await startDevServer()).toBe(true);
+        expect(mocks.spawn.mock.calls[0][1]).toEqual(['run', 'dev']);
     });
 
     it('starts in the nested project directory when nuxt.config lives only at apps/web', async () => {

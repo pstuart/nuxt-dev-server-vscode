@@ -123,6 +123,23 @@
           "maximum": 65535,
           "description": "Default port for the Nuxt dev server"
         },
+        "nuxt-dev-server.port": {
+          "type": ["integer", "null"],
+          "default": null,
+          "minimum": 1,
+          "maximum": 65535,
+          "description": "Optional Nuxt CLI port override (null leaves the project default unchanged)"
+        },
+        "nuxt-dev-server.host": {
+          "type": "string",
+          "default": "",
+          "description": "Optional Nuxt CLI host override: hostname, IPv4 or IPv6 address only (empty leaves the project default unchanged)"
+        },
+        "nuxt-dev-server.https": {
+          "type": "boolean",
+          "default": false,
+          "description": "Pass --https to Nuxt and use HTTPS for port-only URL discovery (false does not override project HTTPS configuration)"
+        },
         "nuxt-dev-server.preferredPackageManager": {
           "type": "string",
           "enum": [

@@ -48,6 +48,21 @@
   "contributes": {
     "commands": [
       {
+        "command": "nuxt-dev-server.build",
+        "title": "Nuxt: Build",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "nuxt-dev-server.generate",
+        "title": "Nuxt: Generate",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
+        "command": "nuxt-dev-server.preview",
+        "title": "Nuxt: Preview Production Build",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
         "command": "nuxt-dev-server.start",
         "title": "Nuxt: Start Dev Server",
         "enablement": "isWorkspaceTrusted"

@@ -100,7 +100,7 @@ function announceUnexpectedExit(
         showWarning(`Nuxt dev server exited unexpectedly (code ${code})`, RESTART_ACTION, SHOW_OUTPUT_ACTION)
     ).then((choice) => {
         if (choice === RESTART_ACTION) {
-            void startDevServer();
+            void startManagedServer(serverScript);
         } else if (choice === SHOW_OUTPUT_ACTION) {
             outputChannel.show(true);
         }
@@ -277,7 +277,17 @@ async function resolveProjectDirectory(rootPath: string): Promise<string | null>
 /**
  * Start the dev server
  */
+let serverScript: 'dev' | 'preview' = 'dev';
+
+export async function startPreviewServer(): Promise<boolean> {
+    return startManagedServer('preview');
+}
+
 export async function startDevServer(): Promise<boolean> {
+    return startManagedServer('dev');
+}
+
+async function startManagedServer(script: 'dev' | 'preview'): Promise<boolean> {
     if (isManagedServerRunning() || startingServer) {
         await showWarning('Dev server is already running');
         return false;
@@ -288,6 +298,7 @@ export async function startDevServer(): Promise<boolean> {
     // failure can't permanently block future starts.
     startingServer = true;
     try {
+        serverScript = script;
         return await startDevServerInternal();
     } finally {
         startingServer = false;
@@ -327,7 +338,7 @@ async function startDevServerInternal(): Promise<boolean> {
         return false;
     }
     const packageManager = await detectPackageManager(projectPath);
-    const devCommand = config.devCommand;
+    const devCommand = serverScript === 'preview' ? 'preview' : config.devCommand;
 
     // Validate dev command to prevent injection
     if (!isValidDevCommand(devCommand)) {
@@ -497,6 +508,51 @@ async function startDevServerInternal(): Promise<boolean> {
     }
 }
 
+/** Run a finite production script without replacing the managed server. */
+export async function runProductionScript(script: 'build' | 'generate'): Promise<boolean> {
+    if (await refuseIfUntrusted('start')) {
+        return false;
+    }
+    const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    const projectPath = root ? await resolveProjectDirectory(root) : null;
+    if (!projectPath) {
+        await showError('No nuxt.config file found in workspace');
+        return false;
+    }
+    if (!isValidDevCommand(script)) {
+        await showError('Invalid production script');
+        return false;
+    }
+    const manager = await detectPackageManager(projectPath);
+    const output = getOrCreateOutputChannel('Nuxt Build');
+    output.show(true);
+    output.appendLine(`\nRunning ${script} in ${projectPath}`);
+    return new Promise<boolean>((resolve) => {
+        const child = spawn(manager, manager === 'npm' || manager === 'bun' ? ['run', script] : [script], {
+            cwd: projectPath, shell: false, detached: false,
+            env: { ...process.env }, stdio: ['ignore', 'pipe', 'pipe']
+        });
+        child.stdout?.on('data', (data: Buffer) => output.append(data.toString()));
+        child.stderr?.on('data', (data: Buffer) => output.append(data.toString()));
+        let settled = false;
+        child.on('error', (error) => {
+            if (settled) { return; }
+            settled = true;
+            output.appendLine(`Failed to run ${script}: ${getErrorMessage(error)}`);
+            void showError(`Nuxt ${script} failed to start: ${getErrorMessage(error)}`);
+            resolve(false);
+        });
+        child.on('close', (code, signal) => {
+            if (settled) { return; }
+            settled = true;
+            const message = `Nuxt ${script} ${code === 0 ? 'succeeded' : 'failed'} (exit code ${code}${signal ? `, signal ${signal}` : ''})`;
+            output.appendLine(message);
+            void (code === 0 ? showInfo(message) : showError(message));
+            resolve(code === 0);
+        });
+    });
+}
+
 /**
  * Stop the dev server
  */
@@ -585,7 +641,7 @@ export async function restartDevServer(): Promise<boolean> {
         await sleep(DEFAULT_CONFIG.RESTART_DELAY_MS);
     }
 
-    return await startDevServer();
+    return await startManagedServer(serverScript);
 }
 
 /**

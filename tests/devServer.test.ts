@@ -2,6 +2,7 @@ import { EventEmitter } from 'node:events';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
+    untrusted: false,
     showInfo: vi.fn(),
     showError: vi.fn(),
     waitForPort: vi.fn(),
@@ -89,15 +90,61 @@ vi.mock('../src/processManager', () => ({
 vi.mock('../src/autoKill', () => ({ onServerStart: mocks.onServerStart, onServerStop: vi.fn() }));
 vi.mock('../src/statusBar', () => ({ forceStatusBarUpdate: vi.fn() }));
 vi.mock('../src/platform', () => ({ isBinaryAvailable: async () => true }));
-vi.mock('../src/workspaceTrust', () => ({ refuseIfUntrusted: async () => false }));
+vi.mock('../src/workspaceTrust', () => ({ refuseIfUntrusted: async () => mocks.untrusted }));
 
 describe('server startup', () => {
+    describe.each([
+        { manager: 'npm', prefix: ['run'] },
+        { manager: 'bun', prefix: ['run'] },
+        { manager: 'pnpm', prefix: [] },
+        { manager: 'yarn', prefix: [] },
+    ])('$manager production scripts', ({ manager, prefix }) => {
+        it.each(['build', 'generate'] as const)('runs the %s package script and reports its exit code', async (script) => {
+            mocks.manager = manager;
+            const { runProductionScript } = await import('../src/devServer');
+            const pending = runProductionScript(script);
+            await vi.waitFor(() => expect(mocks.spawn).toHaveBeenCalled());
+            expect(mocks.spawn).toHaveBeenCalledExactlyOnceWith(manager, [...prefix, script], expect.objectContaining({ shell: false, cwd: '/fixture' }));
+            child.stdout.emit('data', Buffer.from('building'));
+            child.emit('close', 0, null);
+            expect(await pending).toBe(true);
+            expect(mocks.outputChannel.append).toHaveBeenCalledWith('building');
+            expect(mocks.showInfo).toHaveBeenCalledWith(`Nuxt ${script} succeeded (exit code 0)`);
+        });
+    });
+
+    it('refuses production commands in Restricted Mode', async () => {
+        const { runProductionScript, startPreviewServer } = await import('../src/devServer');
+        mocks.untrusted = true;
+        expect(await runProductionScript('build')).toBe(false);
+        expect(await runProductionScript('generate')).toBe(false);
+        expect(await startPreviewServer()).toBe(false);
+        expect(mocks.spawn).not.toHaveBeenCalled();
+    });
+
+    it('reports a failed build exit code', async () => {
+        const { runProductionScript } = await import('../src/devServer');
+        const pending = runProductionScript('build');
+        await vi.waitFor(() => expect(mocks.spawn).toHaveBeenCalled());
+        child.emit('close', 7, null);
+        expect(await pending).toBe(false);
+        expect(mocks.showError).toHaveBeenCalledWith('Nuxt build failed (exit code 7)');
+    });
+
+    it('tracks preview like a dev server', async () => {
+        const { startPreviewServer, getManagedServer } = await import('../src/devServer');
+        expect(await startPreviewServer()).toBe(true);
+        expect(mocks.spawn).toHaveBeenCalledWith('npm', ['run', 'preview'], expect.objectContaining({ shell: false }));
+        expect(getManagedServer()?.port).toBe(3000);
+    });
+
     let child: EventEmitter & {
         pid: number; exitCode: number | null; signalCode: string | null; killed: boolean;
         stdout: EventEmitter; stderr: EventEmitter;
     };
 
     beforeEach(async () => {
+        mocks.untrusted = false;
         mocks.port = null;
         mocks.host = '';
         mocks.https = false;

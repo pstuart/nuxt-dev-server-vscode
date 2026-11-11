@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { startDevServer, stopDevServer, restartDevServer, cleanupManagedServer, clearManagedServer, getManagedServer, isManagedServerRunning } from './devServer';
+import { runProductionScript, startPreviewServer, startDevServer, stopDevServer, restartDevServer, cleanupManagedServer, clearManagedServer, getManagedServer, isManagedServerRunning } from './devServer';
 import { initializeStatusBar, cleanupStatusBar, updateStatusBar } from './statusBar';
 import { showNuxtVersion } from './versionDetector';
 import {
@@ -30,6 +30,9 @@ export function activate(context: vscode.ExtensionContext): void {
 
     // Register all commands
     context.subscriptions.push(
+        vscode.commands.registerCommand(COMMANDS.BUILD, handleCommand(() => runProductionScript('build'))),
+        vscode.commands.registerCommand(COMMANDS.GENERATE, handleCommand(() => runProductionScript('generate'))),
+        vscode.commands.registerCommand(COMMANDS.PREVIEW, handleCommand(startPreviewServer)),
         vscode.commands.registerCommand(COMMANDS.START, handleCommand(startDevServer)),
         vscode.commands.registerCommand(COMMANDS.STOP, handleCommand(stopDevServer)),
         vscode.commands.registerCommand(COMMANDS.RESTART, handleCommand(restartDevServer)),
@@ -97,6 +100,9 @@ async function showQuickPick(): Promise<void> {
     const isOwnServerRunning = isManagedServerRunning();
 
     const items: vscode.QuickPickItem[] = [
+        { label: '$(tools) Build' },
+        { label: '$(files) Generate' },
+        { label: '$(play) Preview Production Build' },
         {
             label: '$(play) Start Dev Server',
             description: isOwnServerRunning ? 'Already running' : undefined,
@@ -147,6 +153,15 @@ async function showQuickPick(): Promise<void> {
 
     // Execute selected action
     switch (selected.label) {
+        case '$(tools) Build':
+            await runProductionScript('build');
+            break;
+        case '$(files) Generate':
+            await runProductionScript('generate');
+            break;
+        case '$(play) Preview Production Build':
+            await startPreviewServer();
+            break;
         case '$(play) Start Dev Server':
             await startDevServer();
             break;

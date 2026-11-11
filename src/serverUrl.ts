@@ -75,14 +75,21 @@ export interface PrintedServerUrl {
     local: boolean;
 }
 
-/** Prefer Nuxt's Local line over Network/docs URLs, retaining the printed authority/path. */
-export function parsePrintedServerUrl(output: string): PrintedServerUrl | null {
+/**
+ * Prefer Nuxt's Local line over Network/docs URLs, retaining the printed authority/path.
+ * Stream buffers must require a terminator: their end may split a port or path.
+ * Standalone output can still treat the end of the string as a complete URL.
+ */
+export function parsePrintedServerUrl(output: string, requireTerminator = false): PrintedServerUrl | null {
     // Nuxt colors the banner with ANSI SGR sequences.
     // eslint-disable-next-line no-control-regex
     const clean = output.replace(/\x1b\[[0-9;]*m/g, '');
     const candidates = [...clean.matchAll(/https?:\/\/(?:\[[a-f\d:.]+\]|[a-z\d.-]+):\d+(?:\/[^\s<>"']*)?(?=$|[\s<>"'])/gi)];
     const parsed: PrintedServerUrl[] = [];
     for (const match of candidates) {
+        if (requireTerminator && match.index + match[0].length === clean.length) {
+            continue;
+        }
         const url = match[0].replace(/^(https?:\/\/[^/]+)\/$/, '$1');
         try {
             const value = new URL(url);

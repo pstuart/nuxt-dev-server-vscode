@@ -13,6 +13,20 @@ describe('server URL parsing', () => {
         expect(parsePrintedServerUrl(output)).toMatchObject({ url, port });
     });
 
+    it.each(['Local: https://localhost:44', 'Local: https://localhost:4443/', 'Local: https://localhost:4443/app'])(
+        'does not treat the end of a stream buffer as termination: %s', output => {
+            expect(parsePrintedServerUrl(output, true)).toBeNull();
+        });
+
+    it.each(['\n', ' ', '<', '"', "'"])('accepts an explicit stream URL terminator %j', terminator => {
+        expect(parsePrintedServerUrl(`Local: https://localhost:4443/app/${terminator}`, true))
+            .toEqual({ url: 'https://localhost:4443/app/', port: 4443, local: true });
+    });
+
+    it('does not treat trailing ANSI color reset as stream URL termination', () => {
+        expect(parsePrintedServerUrl('Local: https://localhost:44\x1b[0m', true)).toBeNull();
+    });
+
     it('prefers the first Local URL and ignores Network links', () => {
         expect(parsePrintedServerUrl('Network: http://10.0.0.1:3000/\nLocal: https://localhost:4443/\nLocal: http://localhost:5000'))
             .toEqual({ url: 'https://localhost:4443', port: 4443, local: true });

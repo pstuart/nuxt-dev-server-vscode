@@ -376,7 +376,7 @@ async function startDevServerInternal(): Promise<boolean> {
         outputChannel.append(output);
 
         outputBuffer = (outputBuffer + output).slice(-16384);
-        const parsed = parsePrintedServerUrl(outputBuffer);
+        const parsed = parsePrintedServerUrl(outputBuffer, true);
         if (parsed && (!printedUrl || (!printedUrl.local && parsed.local) ||
             (parsed.local === printedUrl.local && parsed.url.startsWith(printedUrl.url) && parsed.url !== printedUrl.url))) {
             printedUrl = parsed;

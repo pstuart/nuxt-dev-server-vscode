@@ -14,6 +14,7 @@ import { ProcessQuickPickItem } from './types';
 import { initializeAutoKill, cleanupAutoKill } from './autoKill';
 import { refuseIfUntrusted } from './workspaceTrust';
 import { isManagedNuxtProcess } from './processLogic';
+import { fallbackServerUrl } from './serverUrl';
 
 /**
  * Extension activation
@@ -355,7 +356,7 @@ async function openInBrowser(): Promise<void> {
         }
 
         if (processes.length > 0 && processes[0].port) {
-            const url = `http://localhost:${processes[0].port}`;
+            const url = fallbackServerUrl(Number(processes[0].port), getConfig());
             void openServerUrl(url);
             return;
         }

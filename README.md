@@ -184,6 +184,20 @@ This extension contributes the following settings (access via `Preferences: Open
   - Default port to use if port cannot be detected from output
   - Min: 1, Max: 65535
 
+- **`nuxt-dev-server.port`** (default: `null`)
+  - Optional CLI port override; must be an integer. Min: 1, Max: 65535
+  - `null` leaves the project's port unchanged; `defaultPort` remains a discovery hint, not a CLI override
+
+- **`nuxt-dev-server.host`** (default: `""`)
+  - Optional CLI host override: hostname, IPv4 or IPv6 literal (e.g. `dev.local`, `127.0.0.1`, `::1` or `[::1]`)
+  - Empty leaves the project's host unchanged; URLs, whitespace, flags and shell metacharacters are rejected before spawning
+
+- **`nuxt-dev-server.https`** (default: `false`)
+  - When true, pass `--https` to Nuxt; false does not force HTTP or override project HTTPS configuration
+  - Port-only polling and unmanaged Open in Browser use this scheme and `host` (localhost when empty)
+
+Nuxt's printed `Local:` HTTP/HTTPS URL takes precedence over these fallback settings, including custom hosts and IPv6. A trailing root slash is omitted; paths are retained. Both stdout and stderr are inspected. CLI overrides are passed after `--` for npm and directly for yarn/pnpm/bun. Invalid overrides abort startup rather than being clamped. Changes apply on the next start/restart. HTTPS certificate setup and browser trust remain the project's responsibility; the extension does not generate certificates or disable TLS verification. Unmanaged processes do not expose their printed URL, so their scheme/host require the fallback settings.
+
 ## Configuration Examples
 
 ### Example 1: Auto-kill idle development servers
@@ -218,6 +232,16 @@ For specialized setups:
   "nuxt-dev-server.devCommand": "dev:custom",
   "nuxt-dev-server.updateInterval": 2000,
   "nuxt-dev-server.gracefulShutdownTimeout": 10000
+}
+```
+
+### Example 4: HTTPS on a custom host and port
+
+```json
+{
+  "nuxt-dev-server.port": 4443,
+  "nuxt-dev-server.host": "localhost",
+  "nuxt-dev-server.https": true
 }
 ```
 

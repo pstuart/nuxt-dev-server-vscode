@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { ChildProcess, spawn } from 'child_process';
 import * as path from 'path';
 import { ManagedServer, PackageManager } from './types';
-import { LOCK_FILES, NUXT_CONFIG_FILES, OUTPUT_CHANNELS, DEFAULT_CONFIG, PROCESS_PATTERNS } from './constants';
+import { LOCK_FILES, NUXT_CONFIG_FILES, OUTPUT_CHANNELS, DEFAULT_CONFIG } from './constants';
 import {
     getOrCreateOutputChannel,
     showError,
@@ -26,7 +26,7 @@ import { forceStatusBarUpdate } from './statusBar';
 import { isBinaryAvailable } from './platform';
 import { createOutputPortProbe, isValidDevCommand } from './processLogic';
 import { refuseIfUntrusted } from './workspaceTrust';
-import { isValidPort } from './validation';
+import { fallbackServerUrl, parsePrintedServerUrl, serverCommandArgs, validateServerOptions } from './serverUrl';
 
 /**
  * Whitelist of allowed package managers
@@ -320,6 +320,12 @@ async function startDevServerInternal(): Promise<boolean> {
     debugLog(`Starting dev server in ${projectPath}`);
 
     const config = getConfig();
+    try {
+        validateServerOptions(config);
+    } catch (error) {
+        await showError(getErrorMessage(error));
+        return false;
+    }
     const packageManager = await detectPackageManager(projectPath);
     const devCommand = config.devCommand;
 
@@ -333,7 +339,7 @@ async function startDevServerInternal(): Promise<boolean> {
     debugLog(`Using package manager: ${packageManager}, command: ${devCommand}`);
 
     // Build args array - this is safe as we've validated inputs
-    const args = packageManager === 'npm' ? ['run', devCommand] : [devCommand];
+    const args = serverCommandArgs(packageManager, devCommand, config);
 
     // Spawn WITHOUT shell: true for security
     // This prevents command injection attacks
@@ -358,26 +364,25 @@ async function startDevServerInternal(): Promise<boolean> {
     outputChannel.show(true);
 
     // Track server state
-    let detectedPort = config.defaultPort;
-    let detectedUrl = `http://localhost:${detectedPort}`;
+    let detectedPort = config.port ?? config.defaultPort;
+    let detectedUrl = fallbackServerUrl(detectedPort, config);
+    let printedUrl: ReturnType<typeof parsePrintedServerUrl> = null;
+    const outputBuffers = { stdout: '', stderr: '' };
     const outputPort = createOutputPortProbe();
 
-    // Handle stdout
-    childProcess.stdout?.on('data', (data: Buffer) => {
+    // Both streams can carry Nuxt's banner, but only the same stream can
+    // complete a split URL. Keep bounded tails and share printed Local preference.
+    const handleOutput = (stream: keyof typeof outputBuffers, data: Buffer): void => {
         const output = data.toString();
         outputChannel.append(output);
 
-        // Extract port from output
-        const portMatch = output.match(PROCESS_PATTERNS.PORT_REGEX);
-        if (portMatch?.[1]) {
-            const parsedPort = parseInt(portMatch[1], 10);
-            // Validate port is within valid TCP range before adopting
-            if (!isValidPort(parsedPort)) {
-                debugLog(`Ignoring out-of-range port from Nuxt stdout: ${parsedPort}`);
-                return;
-            }
-            detectedPort = parsedPort;
-            detectedUrl = `http://localhost:${detectedPort}`;
+        outputBuffers[stream] = (outputBuffers[stream] + output).slice(-16384);
+        const parsed = parsePrintedServerUrl(outputBuffers[stream], true);
+        if (parsed && (!printedUrl || (!printedUrl.local && parsed.local) ||
+            (parsed.local === printedUrl.local && parsed.url.startsWith(printedUrl.url) && parsed.url !== printedUrl.url))) {
+            printedUrl = parsed;
+            detectedPort = parsed.port;
+            detectedUrl = parsed.url;
             outputPort.resolve(detectedPort);
             if (managedServer?.process === childProcess) {
                 managedServer.port = detectedPort;
@@ -386,12 +391,9 @@ async function startDevServerInternal(): Promise<boolean> {
             }
             debugLog(`Detected server port: ${detectedPort}`);
         }
-    });
-
-    // Handle stderr
-    childProcess.stderr?.on('data', (data: Buffer) => {
-        outputChannel.append(data.toString());
-    });
+    };
+    childProcess.stdout?.on('data', (data: Buffer) => handleOutput('stdout', data));
+    childProcess.stderr?.on('data', (data: Buffer) => handleOutput('stderr', data));
 
     // Handle process close
     childProcess.on('close', (code) => {
@@ -455,12 +457,16 @@ async function startDevServerInternal(): Promise<boolean> {
 
     if (actualPort !== null) {
         // Update with actual detected port
-        managedServer.port = actualPort;
-        managedServer.url = `http://localhost:${actualPort}`;
-        debugLog(`Server verified listening on port ${actualPort}`);
+        if (managedServer?.process !== childProcess) {
+            return false;
+        }
+        // A printed URL wins even when polling settles in the same turn.
+        managedServer.port = printedUrl ? detectedPort : actualPort;
+        managedServer.url = printedUrl ? detectedUrl : fallbackServerUrl(actualPort, config);
+        debugLog(`Server verified listening on port ${managedServer.port}`);
 
         // The toast resolves on dismissal; startup must not wait for that UI action.
-        void Promise.resolve(showInfo(`Nuxt dev server started on port ${actualPort}`)).catch(() => {});
+        void Promise.resolve(showInfo(`Nuxt dev server started on port ${managedServer.port}`)).catch(() => {});
 
         if (config.openBrowserOnStart) {
             void openServerUrl(managedServer.url);

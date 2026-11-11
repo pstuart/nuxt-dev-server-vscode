@@ -78,6 +78,10 @@ export function getConfig(): ExtensionConfig {
 
     return {
         defaultPort: clampConfigNumber(config.get('defaultPort', 3000), 1, 65535, 3000),
+        // Preserve invalid overrides so startup can reject them rather than silently clamp.
+        port: config.get<number | null>('port', null),
+        host: config.get('host', ''),
+        https: config.get('https', false),
         preferredPackageManager: config.get('preferredPackageManager', 'auto'),
         autoStartOnOpen: config.get('autoStartOnOpen', false),
         showNotifications: config.get('showNotifications', true),

@@ -34,7 +34,7 @@ const { evaluateWorkspaceTrust, untrustedWorkspaceMessage } = await import('../s
 import packageJson from '../package.json';
 
 interface SchemaProperty {
-    type?: string;
+    type?: string | string[];
     default?: unknown;
     minimum?: number;
     maximum?: number;
@@ -291,6 +291,17 @@ describe('workspace trust contract', () => {
                 expect(decision.message).toBe(untrustedWorkspaceMessage(action));
             }
         }
+    });
+});
+
+describe('server overrides contract', () => {
+    it('publishes an optional integer port without silently clamping CLI overrides', () => {
+        expect(properties[SECTION_PREFIX + 'port']).toMatchObject({
+            type: ['integer', 'null'], default: null, minimum: 1, maximum: 65535,
+        });
+        expect(getConfigWith({ port: 70000, host: 'bad;host', https: 'true' })).toMatchObject({
+            port: 70000, host: 'bad;host', https: 'true',
+        });
     });
 });
 

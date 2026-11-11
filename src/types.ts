@@ -41,6 +41,10 @@ export type PackageManager = 'npm' | 'yarn' | 'pnpm' | 'bun';
 export interface ExtensionConfig {
     /** Default port for dev server */
     defaultPort: number;
+    /** Optional CLI overrides; null/empty/false leave Nuxt's defaults unchanged. */
+    port: number | null;
+    host: string;
+    https: boolean;
     /** Preferred package manager (auto-detect if not set) */
     preferredPackageManager: 'auto' | PackageManager;
     /** Auto-start server when workspace opens */

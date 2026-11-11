@@ -63,6 +63,9 @@ export const STATUS_BAR = {
  * Extension command IDs
  */
 export const COMMANDS = {
+    BUILD: 'nuxt-dev-server.build',
+    GENERATE: 'nuxt-dev-server.generate',
+    PREVIEW: 'nuxt-dev-server.preview',
     START: 'nuxt-dev-server.start',
     STOP: 'nuxt-dev-server.stop',
     RESTART: 'nuxt-dev-server.restart',

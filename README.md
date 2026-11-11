@@ -36,6 +36,9 @@ The status bar shows:
 
 All commands are available via the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+P`):
 
+- **Nuxt: Build** - Run the build script, streaming output to Nuxt Build with exit-code notification
+- **Nuxt: Generate** - Run the generate script with the same output and notifications
+- **Nuxt: Preview Production Build** - Run the preview script as the managed server; Stop, Restart and Open in Browser also work on preview
 - **Nuxt: Start Dev Server** - Start the dev server in current workspace
 - **Nuxt: Stop Dev Server** - Stop the managed dev server
 - **Nuxt: Restart Dev Server** - Restart the managed dev server
@@ -97,7 +100,7 @@ This extension has **limited** support in VS Code Restricted Mode (`capabilities
 
 Until you trust the folder:
 
-- **Start Dev Server** is refused (it would run `npm`/`yarn`/`pnpm`/`bun` from the workspace)
+- **Build**, **Generate**, **Preview Production Build** and **Start Dev Server** are refused (it would run `npm`/`yarn`/`pnpm`/`bun` from the workspace)
 - **Kill All** and **List and Kill** are refused (they send SIGTERM/SIGKILL to Nuxt PIDs)
 - **`maxExtraServers` auto-kill** does not terminate extra processes
 - Workspace overrides for `autoStartOnOpen`, `devCommand`, `maxExtraServers`, and the auto-kill timeouts are ignored

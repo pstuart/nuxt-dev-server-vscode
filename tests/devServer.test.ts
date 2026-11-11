@@ -93,16 +93,24 @@ vi.mock('../src/platform', () => ({ isBinaryAvailable: async () => true }));
 vi.mock('../src/workspaceTrust', () => ({ refuseIfUntrusted: async () => mocks.untrusted }));
 
 describe('server startup', () => {
-    it.each(['build', 'generate'] as const)('runs %s and reports its exit code', async (script) => {
-        const { runProductionScript } = await import('../src/devServer');
-        const pending = runProductionScript(script);
-        await vi.waitFor(() => expect(mocks.spawn).toHaveBeenCalled());
-        expect(mocks.spawn).toHaveBeenCalledWith('npm', ['run', script], expect.objectContaining({ shell: false, cwd: '/fixture' }));
-        child.stdout.emit('data', Buffer.from('building'));
-        child.emit('close', 0, null);
-        expect(await pending).toBe(true);
-        expect(mocks.outputChannel.append).toHaveBeenCalledWith('building');
-        expect(mocks.showInfo).toHaveBeenCalledWith(`Nuxt ${script} succeeded (exit code 0)`);
+    describe.each([
+        { manager: 'npm', prefix: ['run'] },
+        { manager: 'bun', prefix: ['run'] },
+        { manager: 'pnpm', prefix: [] },
+        { manager: 'yarn', prefix: [] },
+    ])('$manager production scripts', ({ manager, prefix }) => {
+        it.each(['build', 'generate'] as const)('runs the %s package script and reports its exit code', async (script) => {
+            mocks.manager = manager;
+            const { runProductionScript } = await import('../src/devServer');
+            const pending = runProductionScript(script);
+            await vi.waitFor(() => expect(mocks.spawn).toHaveBeenCalled());
+            expect(mocks.spawn).toHaveBeenCalledExactlyOnceWith(manager, [...prefix, script], expect.objectContaining({ shell: false, cwd: '/fixture' }));
+            child.stdout.emit('data', Buffer.from('building'));
+            child.emit('close', 0, null);
+            expect(await pending).toBe(true);
+            expect(mocks.outputChannel.append).toHaveBeenCalledWith('building');
+            expect(mocks.showInfo).toHaveBeenCalledWith(`Nuxt ${script} succeeded (exit code 0)`);
+        });
     });
 
     it('refuses production commands in Restricted Mode', async () => {

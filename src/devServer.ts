@@ -528,7 +528,7 @@ export async function runProductionScript(script: 'build' | 'generate'): Promise
     output.show(true);
     output.appendLine(`\nRunning ${script} in ${projectPath}`);
     return new Promise<boolean>((resolve) => {
-        const child = spawn(manager, manager === 'npm' ? ['run', script] : [script], {
+        const child = spawn(manager, manager === 'npm' || manager === 'bun' ? ['run', script] : [script], {
             cwd: projectPath, shell: false, detached: false,
             env: { ...process.env }, stdio: ['ignore', 'pipe', 'pipe']
         });

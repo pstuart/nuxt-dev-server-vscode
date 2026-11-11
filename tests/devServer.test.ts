@@ -154,6 +154,27 @@ describe('server startup', () => {
         expect(getManagedServer()?.port).toBe(4443);
     });
 
+    it('does not let a simultaneous polling result overwrite the printed URL', async () => {
+        const { startDevServer, getManagedServer } = await import('../src/devServer');
+        mocks.waitForPort.mockImplementation(() => {
+            child.stdout.emit('data', Buffer.from('Local: https://dev.local:4443/\n'));
+            return Promise.resolve(3000);
+        });
+        expect(await startDevServer()).toBe(true);
+        expect(getManagedServer()?.url).toBe('https://dev.local:4443');
+        expect(getManagedServer()?.port).toBe(4443);
+        expect(mocks.showInfo).toHaveBeenCalledWith('Nuxt dev server started on port 4443');
+    });
+
+    it('finishes a port split across output chunks', async () => {
+        const { startDevServer, getManagedServer } = await import('../src/devServer');
+        await startDevServer();
+        child.stdout.emit('data', Buffer.from('Local: https://localhost:44'));
+        child.stdout.emit('data', Buffer.from('43/\n'));
+        expect(getManagedServer()?.url).toBe('https://localhost:4443');
+        expect(getManagedServer()?.port).toBe(4443);
+    });
+
     it.each(['npm', 'yarn', 'pnpm', 'bun'])('forwards validated overrides via %s and honors polling fallback', async (manager) => {
         const { startDevServer, getManagedServer } = await import('../src/devServer');
         mocks.manager = manager;

@@ -33,6 +33,10 @@ export function initializeStatusBar(context: vscode.ExtensionContext): vscode.St
         vscode.workspace.onDidChangeWorkspaceFolders(() => {
             debugLog('Workspace folders changed');
             if (vscode.workspace.workspaceFolders && vscode.workspace.workspaceFolders.length > 0) {
+                // The timer caches `updateInterval` at creation, so a plain
+                // start would keep the old cadence (or no cadence at all) after
+                // folders are added. Restart to read the current value.
+                stopStatusBarUpdates();
                 startStatusBarUpdates();
             } else {
                 stopStatusBarUpdates();

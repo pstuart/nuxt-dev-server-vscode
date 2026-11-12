@@ -108,6 +108,17 @@ function announceUnexpectedExit(
 }
 
 /**
+ * Set when the managed server was launched under the VS Code JavaScript debugger,
+ * so the status bar can name the state. Reset by clearManagedServer/stop.
+ */
+let debugSessionActive = false;
+
+/** Whether the managed server is running inside a VS Code debug session. */
+export function isDebugSessionActive(): boolean {
+    return debugSessionActive;
+}
+
+/**
  * Get the currently managed server
  */
 export function getManagedServer(): ManagedServer | null {
@@ -130,6 +141,7 @@ export function isManagedServerRunning(): boolean {
  */
 export function clearManagedServer(): void {
     managedServer = null;
+    debugSessionActive = false;
     onServerStop();
     forceStatusBarUpdate();
 }
@@ -142,6 +154,7 @@ export function clearManagedServer(): void {
 function clearManagedServerIfCurrent(child: ChildProcess): void {
     if (managedServer?.process === child) {
         managedServer = null;
+        debugSessionActive = false;
         forceStatusBarUpdate();
         // Clear auto-kill state when the managed server goes away
         onServerStop();
@@ -287,6 +300,85 @@ export async function startDevServer(): Promise<boolean> {
     return startManagedServer('dev');
 }
 
+/**
+ * Start the dev server under the VS Code JavaScript debugger, so breakpoints in
+ * server routes, middleware and SSR code bind without a hand-written launch.json.
+ *
+ * Uses an inline launch configuration (no `launch.json` required) with the Nuxt
+ * project directory as cwd. `autoAttachChildProcesses` covers the Nuxt workers
+ * that the CLI forks. Teardown is unchanged: Stop and Restart both kill the tracked
+ * child, which ends the debug session with it.
+ */
+export async function startDevServerWithDebugger(): Promise<boolean> {
+    if (isManagedServerRunning() || startingServer) {
+        await showWarning('Dev server is already running');
+        return false;
+    }
+
+    // Workspace Trust: both the pre-flight checks and the debugger run local scripts.
+    if (await refuseIfUntrusted('start')) {
+        return false;
+    }
+
+    const rootPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!rootPath) {
+        await showError('No workspace folder open');
+        return false;
+    }
+
+    const projectPath = await resolveProjectDirectory(rootPath);
+    if (!projectPath) {
+        await showError('No nuxt.config file found in workspace');
+        return false;
+    }
+
+    const config = getConfig();
+    try {
+        validateServerOptions(config);
+    } catch (error) {
+        await showError(getErrorMessage(error));
+        return false;
+    }
+
+    const devCommand = config.devCommand;
+    if (!isValidDevCommand(devCommand)) {
+        await showError(`Invalid dev command: "${devCommand}". Only alphanumeric characters, dashes, underscores, and colons are allowed.`);
+        debugLog(`Invalid dev command rejected: ${devCommand}`);
+        return false;
+    }
+
+    startingServer = true;
+    try {
+        serverScript = 'dev';
+        debugSessionActive = true;
+        debugLog(`Starting "${devCommand}" under the JavaScript debugger in ${projectPath}`);
+        const started = await vscode.debug.startDebugging(
+            vscode.workspace.workspaceFolders?.[0],
+            {
+                type: 'node',
+                request: 'launch',
+                name: 'Nuxt Dev Server (Debug)',
+                runtimeExecutable: devCommand,
+                cwd: projectPath,
+                autoAttachChildProcesses: true,
+                skipFiles: ['<node_internals>/**'],
+            }
+        );
+
+        if (!started) {
+            debugSessionActive = false;
+            await showError('Debugger session did not start for the Nuxt dev script');
+            return false;
+        }
+
+        await showInfo(`Nuxt dev server started in debug mode for "${devCommand}"`);
+        onServerStart();
+        return true;
+    } finally {
+        startingServer = false;
+    }
+}
+
 async function startManagedServer(script: 'dev' | 'preview'): Promise<boolean> {
     if (isManagedServerRunning() || startingServer) {
         await showWarning('Dev server is already running');
@@ -299,6 +391,7 @@ async function startManagedServer(script: 'dev' | 'preview'): Promise<boolean> {
     startingServer = true;
     try {
         serverScript = script;
+        debugSessionActive = false;
         return await startDevServerInternal();
     } finally {
         startingServer = false;
@@ -566,6 +659,8 @@ export async function stopDevServer(): Promise<boolean> {
     // close/exit handlers (stop, restart and auto-kill all funnel through here)
     // skip the unexpected-exit warning.
     const stoppingHandle = managedServer.process;
+    const isDebugSession = debugSessionActive;
+    debugSessionActive = false;
     let stoppingState = childExitState.get(stoppingHandle);
     if (!stoppingState) {
         stoppingState = { warned: false, planned: true };
@@ -609,6 +704,12 @@ export async function stopDevServer(): Promise<boolean> {
         managedServer = null;
         forceStatusBarUpdate();
         onServerStop();
+
+        // A debug-driven server is owned by the VS Code debugger; ending the session
+        // alongside the killed child keeps both views of the running server in sync.
+        if (isDebugSession) {
+            void Promise.resolve(vscode.debug.stopDebugging()).catch(() => {});
+        }
 
         await showInfo('Dev server stopped');
         debugLog('Dev server stopped successfully');

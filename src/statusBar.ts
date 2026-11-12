@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { STATUS_BAR, COMMANDS, CONFIG_SECTION } from './constants';
 import { getRunningNuxtProcessCount } from './processManager';
-import { getManagedServer, isManagedServerRunning } from './devServer';
+import { getManagedServer, isManagedServerRunning, isDebugSessionActive } from './devServer';
 import { debugLog, getConfig, getErrorMessage } from './utils';
 
 /**
@@ -99,10 +99,12 @@ export async function updateStatusBar(): Promise<void> {
         const managedServer = getManagedServer();
 
         if (isOwnServerRunning && managedServer) {
-            // Managed server is running - show with port
-            statusBarItem.text = `${STATUS_BAR.ICON_RUNNING} ${STATUS_BAR.TEXT_DEV} :${managedServer.port} (${runningCount})`;
-            statusBarItem.tooltip = `Nuxt server running on ${managedServer.url}\nTotal instances: ${runningCount}\nClick for options`;
-            statusBarItem.name = `${STATUS_BAR.ACCESSIBLE.RUNNING} on port ${managedServer.port} (${runningCount} instance${runningCount === 1 ? '' : 's'} in total)`;
+            // Managed server is running - show with port. A debug launch adds the
+            // debugger marker so the running state stays readable at a glance.
+            const debugging = isDebugSessionActive();
+            statusBarItem.text = `${debugging ? STATUS_BAR.ICON_DEBUG : STATUS_BAR.ICON_RUNNING} ${STATUS_BAR.TEXT_DEV} :${managedServer.port} (${runningCount})`;
+            statusBarItem.tooltip = `Nuxt server running on ${managedServer.url}${debugging ? ' (debug session)' : ''}\nTotal instances: ${runningCount}\nClick for options`;
+            statusBarItem.name = `${debugging ? STATUS_BAR.ACCESSIBLE.DEBUGGING : STATUS_BAR.ACCESSIBLE.RUNNING} on port ${managedServer.port} (${runningCount} instance${runningCount === 1 ? '' : 's'} in total)`;
             statusBarItem.backgroundColor = undefined;
         } else if (runningCount > 0) {
             // Other instances detected

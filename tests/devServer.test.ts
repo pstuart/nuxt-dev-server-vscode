@@ -14,6 +14,8 @@ const mocks = vi.hoisted(() => ({
     onServerStart: vi.fn(),
     openExternal: vi.fn(),
     executeCommand: vi.fn(),
+    startDebugging: vi.fn(),
+    stopDebugging: vi.fn(),
     spawn: vi.fn(),
     killProcessesByWorkingDir: vi.fn(),
     outputChannel: { clear: vi.fn(), show: vi.fn(), append: vi.fn(), appendLine: vi.fn() },
@@ -46,6 +48,7 @@ vi.mock('vscode', () => ({
     },
     env: { openExternal: mocks.openExternal },
     commands: { executeCommand: mocks.executeCommand },
+    debug: { startDebugging: mocks.startDebugging, stopDebugging: mocks.stopDebugging },
     window: { showWarningMessage: mocks.showWarning },
     Uri: { parse: (url: string) => url },
     RelativePattern: class {
@@ -156,6 +159,8 @@ describe('server startup', () => {
         mocks.spawn.mockReset();
         mocks.openExternal.mockReset();
         mocks.executeCommand.mockReset();
+        mocks.startDebugging.mockReset();
+        mocks.stopDebugging.mockReset();
         mocks.onServerStart.mockReset();
         mocks.showInfo.mockReset();
         mocks.showWarning.mockReset();

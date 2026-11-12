@@ -68,6 +68,11 @@
         "enablement": "isWorkspaceTrusted"
       },
       {
+        "command": "nuxt-dev-server.startDebug",
+        "title": "Nuxt: Start Dev Server (Debug)",
+        "enablement": "isWorkspaceTrusted"
+      },
+      {
         "command": "nuxt-dev-server.stop",
         "title": "Nuxt: Stop Dev Server"
       },
@@ -92,6 +97,10 @@
       {
         "command": "nuxt-dev-server.openBrowser",
         "title": "Nuxt: Open in Browser"
+      },
+      {
+        "command": "nuxt-dev-server.openPreview",
+        "title": "Nuxt: Open Preview in Editor"
       },
       {
         "command": "nuxt-dev-server.showVersion",

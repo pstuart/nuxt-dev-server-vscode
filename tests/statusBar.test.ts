@@ -64,7 +64,7 @@ const { STATUS_BAR } = await import('../src/constants');
 const processManager = await import('../src/processManager');
 const devServer = await import('../src/devServer');
 
-function stubState(options: { runningCount?: number; managedServer?: { port: number; url: string } | null }): void {
+function stubState(options: { runningCount?: number; managedServer?: { port: number; url: string } | null; debugging?: boolean }): void {
     const runningCount = options.runningCount ?? 0;
     vi.spyOn(processManager, 'getRunningNuxtProcessCount').mockResolvedValue(runningCount);
     vi.spyOn(processManager, 'getRunningNuxtProcesses').mockResolvedValue([]);
@@ -74,6 +74,7 @@ function stubState(options: { runningCount?: number; managedServer?: { port: num
             ? ({ process: {}, workingDir: '/w', port: options.managedServer.port, url: options.managedServer.url } as never)
             : null
     );
+    vi.spyOn(devServer, 'isDebugSessionActive').mockReturnValue(options.debugging ?? false);
 }
 
 /** Initialize the real status bar against the mock vscode and return its item. */
@@ -106,6 +107,18 @@ describe('updateStatusBar accessible state contract', () => {
         expect(item.name).toBe(`${STATUS_BAR.ACCESSIBLE.RUNNING} on port 3000 (1 instance in total)`);
         expect(item.accessibilityInformation?.label).toBe(item.name);
         expect(item.tooltip).toContain('Nuxt server running on http://localhost:3000');
+    });
+
+    it('debug-launched managed server names the debug session in text, name and tooltip', async () => {
+        stubState({ runningCount: 1, managedServer: { port: 3000, url: 'http://localhost:3000' }, debugging: true });
+        const item = await initialize();
+
+        await updateStatusBar();
+
+        expect(item.text).toBe('$(debug-start) Nuxt Dev :3000 (1)');
+        expect(item.name).toBe(`${STATUS_BAR.ACCESSIBLE.DEBUGGING} on port 3000 (1 instance in total)`);
+        expect(item.accessibilityInformation?.label).toBe(item.name);
+        expect(item.tooltip).toContain('(debug session)');
     });
 
     it('instances-detected branch sets a warning-state name distinct from the running state', async () => {

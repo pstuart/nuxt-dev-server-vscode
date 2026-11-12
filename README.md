@@ -40,12 +40,14 @@ All commands are available via the Command Palette (`Cmd+Shift+P` / `Ctrl+Shift+
 - **Nuxt: Generate** - Run the generate script with the same output and notifications
 - **Nuxt: Preview Production Build** - Run the preview script as the managed server; Stop, Restart and Open in Browser also work on preview
 - **Nuxt: Start Dev Server** - Start the dev server in current workspace
+- **Nuxt: Start Dev Server (Debug)** - Start the dev script under the VS Code JavaScript debugger so server-side breakpoints bind
 - **Nuxt: Stop Dev Server** - Stop the managed dev server
 - **Nuxt: Restart Dev Server** - Restart the managed dev server
 - **Nuxt: Show All Running Instances** - Display detailed information about all running Nuxt servers
 - **Nuxt: List and Kill Instances** - View all running Nuxt processes and select which to kill
 - **Nuxt: Kill All Running Instances** - Kill all Nuxt processes on the system
 - **Nuxt: Open in Browser** - Open the dev server URL in your browser
+- **Nuxt: Open Preview in Editor** - Open the dev server URL in a VS Code Simple Browser tab, regardless of `nuxt-dev-server.browserType`
 - **Nuxt: Show Version** - Display detailed Nuxt version information (declared, installed, and running)
 - **Nuxt: Show Quick Menu** - Quick pick menu with all commands (also triggered by clicking the status bar item)
 
@@ -179,6 +181,7 @@ This extension contributes the following settings (access via `Preferences: Open
   - `"external"` (the default, unchanged behaviour) opens the system browser via `vscode.env.openExternal`
   - `"embedded"` opens a VS Code Simple Browser tab via the built-in `simpleBrowser.show` command (requires a VS Code build that provides it)
   - Any value other than `"embedded"` falls back to the external browser
+  - `Nuxt: Open Preview in Editor` ignores this setting and always opens the Simple Browser tab
 
 - **`nuxt-dev-server.debug`** (default: `false`)
   - Enable debug logging to the output channel

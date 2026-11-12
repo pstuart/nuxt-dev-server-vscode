@@ -112,6 +112,17 @@ export function openServerUrl(url: string): Thenable<unknown> {
 }
 
 /**
+ * Open a server URL, forcing one destination regardless of the browserType
+ * setting. Used by the explicit commands so both previews stay reachable.
+ */
+export function openServerUrlAs(url: string, embedded: boolean): Thenable<unknown> {
+    if (embedded) {
+        return vscode.commands.executeCommand('simpleBrowser.show', url);
+    }
+    return vscode.env.openExternal(vscode.Uri.parse(url));
+}
+
+/**
  * Debug logging utility
  */
 export function debugLog(...args: unknown[]): void {

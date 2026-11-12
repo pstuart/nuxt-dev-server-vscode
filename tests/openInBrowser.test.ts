@@ -13,7 +13,7 @@ vi.mock('vscode', () => ({
 }));
 vi.mock('../src/devServer', () => ({
     getManagedServer: () => mocks.managed,
-    startPreviewServer: vi.fn(), runProductionScript: vi.fn(), startDevServer: vi.fn(), stopDevServer: vi.fn(), restartDevServer: vi.fn(),
+    startPreviewServer: vi.fn(), runProductionScript: vi.fn(), startDevServer: vi.fn(), startDevServerWithDebugger: vi.fn(), stopDevServer: vi.fn(), restartDevServer: vi.fn(),
 }));
 vi.mock('../src/statusBar', () => ({ initializeStatusBar: vi.fn() }));
 vi.mock('../src/autoKill', () => ({ initializeAutoKill: vi.fn() }));

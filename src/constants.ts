@@ -44,6 +44,7 @@ export const OUTPUT_CHANNELS = {
  */
 export const STATUS_BAR = {
     ICON_RUNNING: '$(radio-tower)',
+    ICON_DEBUG: '$(debug-start)',
     ICON_STOPPED: '$(circle-slash)',
     TEXT_DEV: 'Nuxt Dev',
     TEXT_NUXT: 'Nuxt',
@@ -54,6 +55,7 @@ export const STATUS_BAR = {
      */
     ACCESSIBLE: {
         RUNNING: 'Nuxt dev server running',
+        DEBUGGING: 'Nuxt dev server running in debug session',
         INSTANCES: 'Nuxt instances detected, no managed server',
         IDLE: 'Nuxt dev server idle',
     },
@@ -67,12 +69,14 @@ export const COMMANDS = {
     GENERATE: 'nuxt-dev-server.generate',
     PREVIEW: 'nuxt-dev-server.preview',
     START: 'nuxt-dev-server.start',
+    START_DEBUG: 'nuxt-dev-server.startDebug',
     STOP: 'nuxt-dev-server.stop',
     RESTART: 'nuxt-dev-server.restart',
     SHOW_ALL: 'nuxt-dev-server.showAll',
     KILL_ALL: 'nuxt-dev-server.killAll',
     LIST_AND_KILL: 'nuxt-dev-server.listAndKill',
     OPEN_BROWSER: 'nuxt-dev-server.openBrowser',
+    OPEN_PREVIEW: 'nuxt-dev-server.openPreview',
     SHOW_VERSION: 'nuxt-dev-server.showVersion',
     SHOW_MENU: 'nuxt-dev-server.showMenu',
 } as const;

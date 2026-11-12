@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { runProductionScript, startPreviewServer, startDevServer, stopDevServer, restartDevServer, cleanupManagedServer, clearManagedServer, getManagedServer, isManagedServerRunning } from './devServer';
+import { runProductionScript, startPreviewServer, startDevServer, startDevServerWithDebugger, stopDevServer, restartDevServer, cleanupManagedServer, clearManagedServer, getManagedServer, isManagedServerRunning } from './devServer';
 import { initializeStatusBar, cleanupStatusBar, updateStatusBar } from './statusBar';
 import { showNuxtVersion } from './versionDetector';
 import {
@@ -9,7 +9,7 @@ import {
     killProcess
 } from './processManager';
 import { COMMANDS, OUTPUT_CHANNELS } from './constants';
-import { getOrCreateOutputChannel, showInfo, showWarning, showError, debugLog, disposeAllOutputChannels, getConfig, openServerUrl } from './utils';
+import { getOrCreateOutputChannel, showInfo, showWarning, showError, debugLog, disposeAllOutputChannels, getConfig, openServerUrl, openServerUrlAs } from './utils';
 import { ProcessQuickPickItem } from './types';
 import { initializeAutoKill, cleanupAutoKill } from './autoKill';
 import { refuseIfUntrusted } from './workspaceTrust';
@@ -34,12 +34,14 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand(COMMANDS.GENERATE, handleCommand(() => runProductionScript('generate'))),
         vscode.commands.registerCommand(COMMANDS.PREVIEW, handleCommand(startPreviewServer)),
         vscode.commands.registerCommand(COMMANDS.START, handleCommand(startDevServer)),
+        vscode.commands.registerCommand(COMMANDS.START_DEBUG, handleCommand(startDevServerWithDebugger)),
         vscode.commands.registerCommand(COMMANDS.STOP, handleCommand(stopDevServer)),
         vscode.commands.registerCommand(COMMANDS.RESTART, handleCommand(restartDevServer)),
         vscode.commands.registerCommand(COMMANDS.SHOW_ALL, handleCommand(showAllInstances)),
         vscode.commands.registerCommand(COMMANDS.KILL_ALL, handleCommand(killAllNuxtInstancesWithConfirmation)),
         vscode.commands.registerCommand(COMMANDS.LIST_AND_KILL, handleCommand(listAndKillInstances)),
         vscode.commands.registerCommand(COMMANDS.OPEN_BROWSER, handleCommand(openInBrowser)),
+        vscode.commands.registerCommand(COMMANDS.OPEN_PREVIEW, handleCommand(openPreviewInEditor)),
         vscode.commands.registerCommand(COMMANDS.SHOW_VERSION, handleCommand(showNuxtVersion)),
         vscode.commands.registerCommand(COMMANDS.SHOW_MENU, handleCommand(showQuickPick))
     );
@@ -138,6 +140,11 @@ async function showQuickPick(): Promise<void> {
             detail: 'Open the dev server in browser'
         },
         {
+            label: '$(browser) Open Preview in Editor',
+            description: managedServer ? managedServer.url : 'No server running',
+            detail: 'Open the dev server URL in a VS Code Simple Browser tab'
+        },
+        {
             label: '$(info) Show Nuxt Version',
             detail: 'Display installed and running Nuxt version'
         }
@@ -182,6 +189,9 @@ async function showQuickPick(): Promise<void> {
             break;
         case '$(globe) Open in Browser':
             await openInBrowser();
+            break;
+        case '$(browser) Open Preview in Editor':
+            await openPreviewInEditor();
             break;
         case '$(info) Show Nuxt Version':
             await showNuxtVersion();
@@ -381,4 +391,30 @@ async function openInBrowser(): Promise<void> {
     }
 
     void openServerUrl(managedServer.url);
+}
+
+/**
+ * Open the dev server in the VS Code Simple Browser, regardless of browserType.
+ */
+async function openPreviewInEditor(): Promise<void> {
+    const managedServer = getManagedServer();
+
+    if (!managedServer) {
+        const processes = await getRunningNuxtProcesses();
+        if (processes.length === 0) {
+            await showWarning('No Nuxt server is running');
+            return;
+        }
+
+        if (processes.length > 0 && processes[0].port) {
+            const url = fallbackServerUrl(Number(processes[0].port), getConfig());
+            void openServerUrlAs(url, true);
+            return;
+        }
+
+        await showWarning('No server URL available');
+        return;
+    }
+
+    void openServerUrlAs(managedServer.url, true);
 }

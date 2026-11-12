@@ -134,6 +134,41 @@ describe('updateStatusBar accessible state contract', () => {
         expect(item.backgroundColor).toBeInstanceOf(((await import('vscode')) as unknown as { ThemeColor: new (id: string) => object }).ThemeColor);
     });
 
+    it('restarts the timer on folder changes and stops it when all folders close', async () => {
+        vi.useFakeTimers();
+        const vscode = await import('vscode');
+        const utils = await import('../src/utils');
+        const config = utils.getConfig();
+        vi.spyOn(utils, 'getConfig').mockReturnValue({ ...config, updateInterval: 1000 });
+        stubState({});
+        const originalFolders = vscode.workspace.workspaceFolders;
+        try {
+            await initialize();
+            const callback = vi.mocked(vscode.workspace.onDidChangeWorkspaceFolders).mock.calls.at(-1)?.[0];
+            expect(callback).toBeDefined();
+            const event = { added: [], removed: [] };
+            Object.defineProperty(vscode.workspace, 'workspaceFolders', { configurable: true, value: [{ uri: { fsPath: '/w' } }] });
+            vi.mocked(utils.getConfig).mockReturnValue({ ...config, updateInterval: 2000 });
+            callback!(event);
+            expect(vi.getTimerCount()).toBe(1);
+            vi.mocked(processManager.getRunningNuxtProcessCount).mockClear();
+            await vi.advanceTimersByTimeAsync(1000);
+            expect(processManager.getRunningNuxtProcessCount).not.toHaveBeenCalled();
+            await vi.advanceTimersByTimeAsync(1000);
+            expect(processManager.getRunningNuxtProcessCount).toHaveBeenCalledTimes(1);
+            Object.defineProperty(vscode.workspace, 'workspaceFolders', { configurable: true, value: [] });
+            callback!(event);
+            expect(vi.getTimerCount()).toBe(0);
+            Object.defineProperty(vscode.workspace, 'workspaceFolders', { configurable: true, value: [{ uri: { fsPath: '/w' } }] });
+            callback!(event);
+            expect(vi.getTimerCount()).toBe(1);
+        } finally {
+            cleanupStatusBar();
+            Object.defineProperty(vscode.workspace, 'workspaceFolders', { configurable: true, value: originalFolders });
+            vi.useRealTimers();
+        }
+    });
+
     it('idle branch sets an idle name and a start-hint tooltip', async () => {
         stubState({ runningCount: 0, managedServer: null });
         const item = await initialize();
